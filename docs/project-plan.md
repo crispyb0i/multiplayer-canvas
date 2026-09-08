@@ -1,5 +1,7 @@
 # Multiplayer Canvas curriculum
 
+Active milestone: M8
+
 This project is built as a sequence of lessons. Each milestone should leave the app runnable, tested, and explainable in an interview. The active milestone is **M6**.
 
 ## Milestones

@@ -3,6 +3,12 @@ import {
   canAccessWorkspace,
   type CollaborationIdentity,
 } from "./authorization";
+import {
+  loadSnapshot,
+  saveSnapshot,
+  upsertWorkspace,
+  type SnapshotRecord,
+} from "./persistence";
 
 export const JOIN_MESSAGE = "join";
 export const PRESENCE_MESSAGE = "presence";
@@ -19,12 +25,21 @@ export type CollaborationClient = { send(data: string | Uint8Array): void };
 
 type Room = {
   document: Y.Doc;
+  documentId: string;
   clients: Set<CollaborationClient>;
   presence: Map<CollaborationClient, Presence>;
+  organizationId?: string;
+  version: number;
 };
 
-// The room hub owns ephemeral room state. Keeping this transport-neutral lets
-// tests exercise room semantics without opening ports; persistence comes later.
+type RoomPersistence = {
+  upsertWorkspace: typeof upsertWorkspace;
+  loadSnapshot: typeof loadSnapshot;
+  saveSnapshot: typeof saveSnapshot;
+};
+
+// The room hub owns room semantics while persistence is injected, letting
+// tests exercise collaboration without opening ports or contacting Neon.
 export class CollaborationRooms {
   private readonly rooms = new Map<string, Room>();
   private readonly clientRooms = new Map<CollaborationClient, string>();
@@ -32,9 +47,13 @@ export class CollaborationRooms {
     CollaborationClient,
     CollaborationIdentity
   >();
+  private readonly loadingRooms = new Map<string, Promise<Room | null>>();
 
   constructor(
-    private readonly options: { requireAuthentication?: boolean } = {},
+    private readonly options: {
+      requireAuthentication?: boolean;
+      persistence?: RoomPersistence;
+    } = {},
   ) {}
 
   connect(client: CollaborationClient): void {
@@ -68,7 +87,22 @@ export class CollaborationRooms {
       return;
     }
     const update = Y.encodeStateAsUpdate(room.document);
+    room.version += 1;
     for (const peer of room.clients) if (peer !== client) peer.send(update);
+    const organizationId = room.organizationId;
+    if (this.options.persistence && organizationId) {
+      const snapshot: SnapshotRecord = {
+        organizationId,
+        documentId: room.documentId,
+        snapshot: update,
+        version: room.version,
+      };
+      void this.options.persistence.saveSnapshot(snapshot).catch((error) => {
+        // Keep serving the in-memory CRDT, but surface persistence failure so
+        // operations can alert/retry instead of pretending data was durable.
+        console.error("Failed to persist collaboration snapshot", error);
+      });
+    }
   }
 
   disconnect(client: CollaborationClient): void {
@@ -105,13 +139,18 @@ export class CollaborationRooms {
       message.roomId.length > 0
     ) {
       const identity = this.identities.get(client);
+      const organizationId = message.organizationId;
       if (
         !this.options.requireAuthentication ||
         (identity &&
-          typeof message.organizationId === "string" &&
-          canAccessWorkspace(identity, message.organizationId, "edit"))
+          typeof organizationId === "string" &&
+          canAccessWorkspace(identity, organizationId, "edit"))
       )
-        this.join(client, message.roomId);
+        this.join(
+          client,
+          message.roomId,
+          typeof organizationId === "string" ? organizationId : undefined,
+        );
       return;
     }
     if (message.type !== PRESENCE_MESSAGE) return;
@@ -123,11 +162,25 @@ export class CollaborationRooms {
     this.broadcast(room, client, { type: PRESENCE_MESSAGE, presence });
   }
 
-  private join(client: CollaborationClient, roomId: string): void {
+  private join(
+    client: CollaborationClient,
+    roomId: string,
+    organizationId?: string,
+  ): void {
     this.disconnect(client);
+    if (this.options.persistence && organizationId) {
+      void this.joinPersisted(client, roomId, organizationId);
+      return;
+    }
     let room = this.rooms.get(roomId);
     if (!room) {
-      room = { document: new Y.Doc(), clients: new Set(), presence: new Map() };
+      room = {
+        document: new Y.Doc(),
+        documentId: roomId,
+        clients: new Set(),
+        presence: new Map(),
+        version: 0,
+      };
       this.rooms.set(roomId, room);
     }
     room.clients.add(client);
@@ -135,6 +188,63 @@ export class CollaborationRooms {
     client.send(Y.encodeStateAsUpdate(room.document));
     for (const presence of room.presence.values())
       client.send(JSON.stringify({ type: PRESENCE_MESSAGE, presence }));
+  }
+
+  private async joinPersisted(
+    client: CollaborationClient,
+    roomId: string,
+    organizationId: string,
+  ): Promise<void> {
+    const roomKey = `${organizationId}:${roomId}`;
+    const pending = this.loadingRooms.get(roomKey);
+    const existing = this.rooms.get(roomKey);
+    const roomPromise =
+      pending ??
+      (existing
+        ? Promise.resolve(existing)
+        : this.loadPersistedRoom(roomId, organizationId));
+    if (!pending) this.loadingRooms.set(roomKey, roomPromise);
+    const room = await roomPromise;
+    if (!pending) this.loadingRooms.delete(roomKey);
+    if (!room || this.identities.get(client)?.organizationId !== organizationId)
+      return;
+    room.clients.add(client);
+    this.clientRooms.set(client, roomKey);
+    client.send(Y.encodeStateAsUpdate(room.document));
+    for (const presence of room.presence.values())
+      client.send(JSON.stringify({ type: PRESENCE_MESSAGE, presence }));
+  }
+
+  private async loadPersistedRoom(
+    roomId: string,
+    organizationId: string,
+  ): Promise<Room | null> {
+    if (!this.options.persistence) return null;
+    try {
+      await this.options.persistence.upsertWorkspace({
+        organizationId,
+        name: organizationId,
+      });
+      const persisted = await this.options.persistence.loadSnapshot(
+        organizationId,
+        roomId,
+      );
+      const document = new Y.Doc();
+      if (persisted) Y.applyUpdate(document, persisted.snapshot);
+      const room: Room = {
+        document,
+        documentId: roomId,
+        clients: new Set(),
+        presence: new Map(),
+        organizationId,
+        version: persisted?.version ?? 0,
+      };
+      this.rooms.set(`${organizationId}:${roomId}`, room);
+      return room;
+    } catch (error) {
+      console.error("Failed to restore collaboration room", error);
+      return null;
+    }
   }
 
   private broadcast(

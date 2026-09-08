@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { CollaborationRooms } from "./collaboration";
 import { createDocument, type RectangleShape } from "./document";
@@ -166,5 +166,52 @@ describe("collaboration room transport", () => {
       JSON.stringify({ type: "join", roomId: "one", organizationId: "org-2" }),
     );
     expect(member.messages).toEqual([]);
+  });
+
+  it("restores a snapshot before joining and persists later updates", async () => {
+    const restoredDocument = createYDocument();
+    executeYjsCommand(restoredDocument, { type: "add", shape: rectangle });
+    const persistence = {
+      upsertWorkspace: vi.fn(async () => undefined),
+      loadSnapshot: vi.fn(async () => ({
+        organizationId: "org-1",
+        documentId: "canvas-1",
+        snapshot: encodeYjsState(restoredDocument),
+        version: 4,
+      })),
+      saveSnapshot: vi.fn(async () => undefined),
+    };
+    const rooms = new CollaborationRooms({
+      requireAuthentication: true,
+      persistence,
+    });
+    const client = new FakeClient();
+    rooms.connect(client);
+    rooms.authenticate(client, {
+      userId: "user-1",
+      organizationId: "org-1",
+      organizationRole: "org:member",
+    });
+    rooms.receive(
+      client,
+      JSON.stringify({
+        type: "join",
+        roomId: "canvas-1",
+        organizationId: "org-1",
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(persistence.loadSnapshot).toHaveBeenCalledWith("org-1", "canvas-1");
+    expect(client.messages[0]).toBeInstanceOf(Uint8Array);
+
+    rooms.receive(client, encodeYjsState(createYDocument()));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(persistence.saveSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: "org-1",
+        documentId: "canvas-1",
+        version: 5,
+      }),
+    );
   });
 });

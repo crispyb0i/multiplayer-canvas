@@ -2,9 +2,17 @@ import { createServer } from "node:http";
 import { WebSocketServer, type RawData } from "ws";
 import { verifyToken } from "@clerk/backend";
 import { CollaborationRooms } from "../lib/collaboration";
+import {
+  loadSnapshot,
+  saveSnapshot,
+  upsertWorkspace,
+} from "../lib/persistence";
 
 const port = Number(process.env.PORT ?? 8080);
-const rooms = new CollaborationRooms({ requireAuthentication: true });
+const rooms = new CollaborationRooms({
+  requireAuthentication: true,
+  persistence: { loadSnapshot, saveSnapshot, upsertWorkspace },
+});
 const httpServer = createServer((request, response) => {
   if (request.url === "/health") {
     response.writeHead(200, { "content-type": "application/json" });
