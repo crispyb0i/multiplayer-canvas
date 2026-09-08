@@ -1,19 +1,36 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent, WheelEvent } from "react";
-import { applyCommand, createDocument, type DocumentModel, type Shape, type TextShape } from "../lib/document";
+import { type Shape, type TextShape } from "../lib/document";
+import {
+  canRedo,
+  canUndo,
+  createHistory,
+  executeCommand,
+  redo,
+  undo,
+  type HistoryState,
+} from "../lib/history";
 
 const CANVAS_WIDTH = 900;
 const CANVAS_HEIGHT = 560;
-const movements: Record<string, { x?: number; y?: number }> = { ArrowLeft: { x: -1 }, ArrowRight: { x: 1 }, ArrowUp: { y: -1 }, ArrowDown: { y: 1 } };
+const movements: Record<string, { x?: number; y?: number }> = {
+  ArrowLeft: { x: -1 },
+  ArrowRight: { x: 1 },
+  ArrowUp: { y: -1 },
+  ArrowDown: { y: 1 },
+};
 // crypto.randomUUID isn't available in every test/SSR environment, so this
 // falls back to Date.now() rather than crashing; collisions there just fail
 // the document model's duplicate-id check instead of corrupting state.
-function newId(prefix: string) { return `${prefix}-${crypto.randomUUID?.() ?? Date.now()}`; }
+function newId(prefix: string) {
+  return `${prefix}-${crypto.randomUUID?.() ?? Date.now()}`;
+}
 
 export default function Editor() {
-  const [document, setDocument] = useState<DocumentModel>(() => createDocument());
+  const [history, setHistory] = useState<HistoryState>(() => createHistory());
+  const document = history.document;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [viewport, setViewport] = useState({ x: 0, y: 0, scale: 1 });
   const [isSpaceDown, setIsSpaceDown] = useState(false);
@@ -21,10 +38,43 @@ export default function Editor() {
   // pointermove and don't need to trigger a re-render themselves — only the
   // derived document/viewport updates below do. Refs also avoid stale
   // closures inside the pointer handlers between mousedown and mouseup.
-  const drag = useRef<{ id: string; startX: number; startY: number; shape: Shape } | null>(null);
-  const pan = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const drag = useRef<{
+    id: string;
+    startX: number;
+    startY: number;
+    shape: Shape;
+  } | null>(null);
+  const pan = useRef<{
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const selected = document.shapes.find((shape) => shape.id === selectedId);
+
+  // Selection is UI state, not part of the document timeline. Reconcile it
+  // after undo/redo so a restored or removed shape cannot stay selected.
+  useEffect(() => {
+    if (
+      selectedId &&
+      !document.shapes.some((shape) => shape.id === selectedId)
+    ) {
+      setSelectedId(null);
+    }
+  }, [document, selectedId]);
+
+  function runCommand(command: Parameters<typeof executeCommand>[1]) {
+    setHistory((current) => executeCommand(current, command));
+  }
+
+  function undoDocument() {
+    setHistory((current) => undo(current));
+  }
+
+  function redoDocument() {
+    setHistory((current) => redo(current));
+  }
 
   // Converts a browser pointer event into canvas-space coordinates: first
   // scale from CSS pixels to the SVG's viewBox units (in case the element is
@@ -37,13 +87,38 @@ export default function Editor() {
   // the shape jump the instant a drag started.
   function point(event: { clientX: number; clientY: number }) {
     const bounds = svgRef.current!.getBoundingClientRect();
-    const canvasX = ((event.clientX - bounds.left) / bounds.width) * CANVAS_WIDTH;
-    const canvasY = ((event.clientY - bounds.top) / bounds.height) * CANVAS_HEIGHT;
-    return { x: (canvasX - viewport.x) / viewport.scale, y: (canvasY - viewport.y) / viewport.scale };
+    const canvasX =
+      ((event.clientX - bounds.left) / bounds.width) * CANVAS_WIDTH;
+    const canvasY =
+      ((event.clientY - bounds.top) / bounds.height) * CANVAS_HEIGHT;
+    return {
+      x: (canvasX - viewport.x) / viewport.scale,
+      y: (canvasY - viewport.y) / viewport.scale,
+    };
   }
   function addShape(kind: "rectangle" | "text") {
-    const shape: Shape = kind === "rectangle" ? { type: "rectangle", id: newId("rectangle"), x: 120, y: 100, width: 180, height: 100, fill: "#8ee6c5" } : { type: "text", id: newId("text"), x: 150, y: 160, width: 220, height: 42, fill: "#eef2ff", text: "Double-click to edit" };
-    setDocument((current) => applyCommand(current, { type: "add", shape }));
+    const shape: Shape =
+      kind === "rectangle"
+        ? {
+            type: "rectangle",
+            id: newId("rectangle"),
+            x: 120,
+            y: 100,
+            width: 180,
+            height: 100,
+            fill: "#8ee6c5",
+          }
+        : {
+            type: "text",
+            id: newId("text"),
+            x: 150,
+            y: 160,
+            width: 220,
+            height: 42,
+            fill: "#eef2ff",
+            text: "Double-click to edit",
+          };
+    runCommand({ type: "add", shape });
     setSelectedId(shape.id);
   }
   // Middle-click or Space-drag pans instead of selecting. setPointerCapture
@@ -51,7 +126,12 @@ export default function Editor() {
   // leaves the SVG mid-drag, so a fast pan doesn't get stuck.
   function onPointerDown(event: PointerEvent<SVGSVGElement>) {
     if (event.button === 1 || isSpaceDown) {
-      pan.current = { startX: event.clientX, startY: event.clientY, originX: viewport.x, originY: viewport.y };
+      pan.current = {
+        startX: event.clientX,
+        startY: event.clientY,
+        originX: viewport.x,
+        originY: viewport.y,
+      };
       event.currentTarget.setPointerCapture(event.pointerId);
       return;
     }
@@ -63,11 +143,20 @@ export default function Editor() {
     event.stopPropagation();
     const position = point(event);
     setSelectedId(shape.id);
-    drag.current = { id: shape.id, startX: position.x, startY: position.y, shape };
+    drag.current = {
+      id: shape.id,
+      startX: position.x,
+      startY: position.y,
+      shape,
+    };
   }
   function onPointerMove(event: PointerEvent<SVGSVGElement>) {
     if (pan.current) {
-      setViewport((current) => ({ ...current, x: pan.current!.originX + event.clientX - pan.current!.startX, y: pan.current!.originY + event.clientY - pan.current!.startY }));
+      setViewport((current) => ({
+        ...current,
+        x: pan.current!.originX + event.clientX - pan.current!.startX,
+        y: pan.current!.originY + event.clientY - pan.current!.startY,
+      }));
       return;
     }
     if (!drag.current) return;
@@ -77,15 +166,31 @@ export default function Editor() {
     // rounding error and keeps the shape locked to the same point under the
     // cursor for the whole gesture.
     const { id, shape, startX, startY } = drag.current;
-    setDocument((current) => applyCommand(current, { type: "update", id, changes: { x: shape.x + position.x - startX, y: shape.y + position.y - startY } }));
+    runCommand({
+      type: "update",
+      id,
+      changes: {
+        x: shape.x + position.x - startX,
+        y: shape.y + position.y - startY,
+      },
+    });
   }
-  function stopPointer() { pan.current = null; drag.current = null; }
+  function stopPointer() {
+    pan.current = null;
+    drag.current = null;
+  }
   function onKeyDown(event: KeyboardEvent<SVGSVGElement>) {
     if (event.key === " ") setIsSpaceDown(true);
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      if (event.shiftKey) redoDocument();
+      else undoDocument();
+      return;
+    }
     if (!selectedId || !selected) return;
     if (event.key === "Delete" || event.key === "Backspace") {
       event.preventDefault();
-      setDocument((current) => applyCommand(current, { type: "remove", id: selectedId }));
+      runCommand({ type: "remove", id: selectedId });
       setSelectedId(null);
       return;
     }
@@ -93,7 +198,14 @@ export default function Editor() {
     if (movement) {
       event.preventDefault();
       const distance = event.shiftKey ? 10 : 1;
-      setDocument((current) => applyCommand(current, { type: "update", id: selectedId, changes: { x: selected.x + (movement.x ?? 0) * distance, y: selected.y + (movement.y ?? 0) * distance } }));
+      runCommand({
+        type: "update",
+        id: selectedId,
+        changes: {
+          x: selected.x + (movement.x ?? 0) * distance,
+          y: selected.y + (movement.y ?? 0) * distance,
+        },
+      });
     }
   }
   // Zoom is multiplicative (scale *= factor), not additive, so each wheel
@@ -102,7 +214,13 @@ export default function Editor() {
   // usable size.
   function onWheel(event: WheelEvent<SVGSVGElement>) {
     event.preventDefault();
-    setViewport((current) => ({ ...current, scale: Math.min(3, Math.max(0.4, current.scale * (event.deltaY < 0 ? 1.1 : 0.9))) }));
+    setViewport((current) => ({
+      ...current,
+      scale: Math.min(
+        3,
+        Math.max(0.4, current.scale * (event.deltaY < 0 ? 1.1 : 0.9)),
+      ),
+    }));
   }
   return (
     <section className="mt-10" aria-label="Single-user canvas editor">
@@ -119,7 +237,25 @@ export default function Editor() {
         >
           Add text
         </button>
-        <span className="text-sm text-muted">{selected ? `Selected: ${selected.type}` : "Nothing selected"}</span>
+        <button
+          aria-label="Undo"
+          className="cursor-pointer rounded-lg border border-[#52617d] bg-panel px-3.5 py-2.5 font-bold text-ink disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={!canUndo(history)}
+          onClick={undoDocument}
+        >
+          Undo
+        </button>
+        <button
+          aria-label="Redo"
+          className="cursor-pointer rounded-lg border border-[#52617d] bg-panel px-3.5 py-2.5 font-bold text-ink disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={!canRedo(history)}
+          onClick={redoDocument}
+        >
+          Redo
+        </button>
+        <span className="text-sm text-muted">
+          {selected ? `Selected: ${selected.type}` : "Nothing selected"}
+        </span>
         {selected?.type === "text" && (
           <label className="text-sm text-muted">
             Text{" "}
@@ -127,7 +263,13 @@ export default function Editor() {
               aria-label="Selected text"
               className="ml-1.5 rounded-md border border-[#52617d] bg-panel px-2.5 py-2.5 text-ink"
               value={(selected as TextShape).text}
-              onChange={(event) => setDocument((current) => applyCommand(current, { type: "update", id: selected.id, changes: { text: event.target.value } }))}
+              onChange={(event) =>
+                runCommand({
+                  type: "update",
+                  id: selected.id,
+                  changes: { text: event.target.value },
+                })
+              }
             />
           </label>
         )}
@@ -148,13 +290,30 @@ export default function Editor() {
         onWheel={onWheel}
       >
         <rect width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#111827" />
-        <g transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.scale})`}>
+        <g
+          transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.scale})`}
+        >
           {document.shapes.map((shape) => (
-            <g key={shape.id} onPointerDown={(event) => onShapePointerDown(event, shape)}>
+            <g
+              key={shape.id}
+              onPointerDown={(event) => onShapePointerDown(event, shape)}
+            >
               {shape.type === "rectangle" ? (
-                <rect x={shape.x} y={shape.y} width={shape.width} height={shape.height} rx="8" fill={shape.fill} />
+                <rect
+                  x={shape.x}
+                  y={shape.y}
+                  width={shape.width}
+                  height={shape.height}
+                  rx="8"
+                  fill={shape.fill}
+                />
               ) : (
-                <text x={shape.x} y={shape.y + 28} fill={shape.fill} fontSize="22">
+                <text
+                  x={shape.x}
+                  y={shape.y + 28}
+                  fill={shape.fill}
+                  fontSize="22"
+                >
                   {shape.text}
                 </text>
               )}
@@ -166,7 +325,13 @@ export default function Editor() {
                   y={shape.y - 6}
                   width={shape.width + 12}
                   height={shape.height + 12}
-                  style={{ fill: "none", stroke: "#ffffff", strokeDasharray: "5 4", strokeWidth: 2, pointerEvents: "none" }}
+                  style={{
+                    fill: "none",
+                    stroke: "#ffffff",
+                    strokeDasharray: "5 4",
+                    strokeWidth: 2,
+                    pointerEvents: "none",
+                  }}
                 />
               )}
             </g>
@@ -174,7 +339,8 @@ export default function Editor() {
         </g>
       </svg>
       <p className="text-[0.85rem] leading-relaxed text-muted">
-        Click a shape to select it. Drag to move. Arrow keys move the selection; Shift moves by 10. Space-drag pans; the wheel zooms.
+        Click a shape to select it. Drag to move. Arrow keys move the selection;
+        Shift moves by 10. Space-drag pans; the wheel zooms.
       </p>
     </section>
   );
