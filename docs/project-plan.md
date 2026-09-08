@@ -1,6 +1,6 @@
 # Multiplayer Canvas curriculum
 
-This project is built as a sequence of lessons. Each milestone should leave the app runnable, tested, and explainable in an interview. The active milestone is **M5**.
+This project is built as a sequence of lessons. Each milestone should leave the app runnable, tested, and explainable in an interview. The active milestone is **M6**.
 
 ## Milestones
 
@@ -60,4 +60,12 @@ This project is built as a sequence of lessons. Each milestone should leave the 
 - Clients joining a room receive its current state and updates stay isolated between rooms.
 - Disconnect and reconnect behavior is covered by focused multi-client tests.
 - The service exposes a health endpoint and has Railway deployment configuration.
+- All repository quality gates pass.
+
+## M6 Definition of Done
+
+- Presence travels over the collaboration transport without entering Yjs.
+- Connected peers see each other's cursors and selected shapes.
+- Presence is isolated by room and removed when a client disconnects.
+- Invalid presence payloads are ignored without affecting document updates.
 - All repository quality gates pass.

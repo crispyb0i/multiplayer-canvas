@@ -1,22 +1,31 @@
 import * as Y from "yjs";
 
 export const JOIN_MESSAGE = "join";
+export const PRESENCE_MESSAGE = "presence";
+export const PRESENCE_REMOVE_MESSAGE = "presence-remove";
 
-export type CollaborationClient = {
-  send(data: string | Uint8Array): void;
+export type Presence = {
+  clientId: string;
+  color: string;
+  cursor: { x: number; y: number } | null;
+  selectedId: string | null;
 };
 
-type Room = { document: Y.Doc; clients: Set<CollaborationClient> };
+export type CollaborationClient = { send(data: string | Uint8Array): void };
 
-// This room hub owns only ephemeral room state. Keeping the transport-neutral
-// core separate from WebSocket lets tests exercise collaboration without
-// opening ports and leaves persistence for a later milestone.
+type Room = {
+  document: Y.Doc;
+  clients: Set<CollaborationClient>;
+  presence: Map<CollaborationClient, Presence>;
+};
+
+// The room hub owns ephemeral room state. Keeping this transport-neutral lets
+// tests exercise room semantics without opening ports; persistence comes later.
 export class CollaborationRooms {
   private readonly rooms = new Map<string, Room>();
   private readonly clientRooms = new Map<CollaborationClient, string>();
 
   connect(client: CollaborationClient): void {
-    // A reused socket must start without stale room membership.
     this.disconnect(client);
   }
 
@@ -25,36 +34,34 @@ export class CollaborationRooms {
       this.handleControlMessage(client, data);
       return;
     }
-
     const roomId = this.clientRooms.get(client);
     const room = roomId ? this.rooms.get(roomId) : undefined;
     if (!room) return;
-
-    // Yjs validates update structure while applying it. A malformed client
-    // update is ignored so one bad message cannot take down the room server.
+    // Yjs validates update structure so one malformed client message cannot
+    // take down the room server.
     try {
       Y.applyUpdate(room.document, data);
     } catch {
       return;
     }
-
     const update = Y.encodeStateAsUpdate(room.document);
-    for (const peer of room.clients) {
-      if (peer !== client) peer.send(update);
-    }
+    for (const peer of room.clients) if (peer !== client) peer.send(update);
   }
 
   disconnect(client: CollaborationClient): void {
     const roomId = this.clientRooms.get(client);
     if (!roomId) return;
     this.clientRooms.delete(client);
-
     const room = this.rooms.get(roomId);
     if (!room) return;
     room.clients.delete(client);
-    // Keep the document while no sockets are connected so a reconnect can
-    // recover the room. M8 can replace this process-local lifetime with
-    // persistence and an explicit room-retention policy.
+    const presence = room.presence.get(client);
+    room.presence.delete(client);
+    if (presence)
+      this.broadcast(room, client, {
+        type: PRESENCE_REMOVE_MESSAGE,
+        clientId: presence.clientId,
+      });
   }
 
   private handleControlMessage(
@@ -67,33 +74,74 @@ export class CollaborationRooms {
     } catch {
       return;
     }
-
+    if (!isRecord(message)) return;
     if (
-      !isRecord(message) ||
-      message.type !== JOIN_MESSAGE ||
-      typeof message.roomId !== "string" ||
-      message.roomId.length === 0
+      message.type === JOIN_MESSAGE &&
+      typeof message.roomId === "string" &&
+      message.roomId.length > 0
     ) {
+      this.join(client, message.roomId);
       return;
     }
-    this.join(client, message.roomId);
+    if (message.type !== PRESENCE_MESSAGE) return;
+    const roomId = this.clientRooms.get(client);
+    const room = roomId ? this.rooms.get(roomId) : undefined;
+    const presence = parsePresence(message.presence);
+    if (!room || !presence) return;
+    room.presence.set(client, presence);
+    this.broadcast(room, client, { type: PRESENCE_MESSAGE, presence });
   }
 
   private join(client: CollaborationClient, roomId: string): void {
     this.disconnect(client);
     let room = this.rooms.get(roomId);
     if (!room) {
-      room = { document: new Y.Doc(), clients: new Set() };
+      room = { document: new Y.Doc(), clients: new Set(), presence: new Map() };
       this.rooms.set(roomId, room);
     }
-
     room.clients.add(client);
     this.clientRooms.set(client, roomId);
-    // A reconnect receives current room state before future updates.
     client.send(Y.encodeStateAsUpdate(room.document));
+    for (const presence of room.presence.values())
+      client.send(JSON.stringify({ type: PRESENCE_MESSAGE, presence }));
+  }
+
+  private broadcast(
+    room: Room,
+    excluded: CollaborationClient,
+    message: Record<string, unknown>,
+  ): void {
+    const serialized = JSON.stringify(message);
+    for (const peer of room.clients)
+      if (peer !== excluded) peer.send(serialized);
   }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parsePresence(value: unknown): Presence | null {
+  if (!isRecord(value)) return null;
+  const cursor = value.cursor;
+  const validCursor =
+    cursor === null ||
+    (isRecord(cursor) &&
+      typeof cursor.x === "number" &&
+      Number.isFinite(cursor.x) &&
+      typeof cursor.y === "number" &&
+      Number.isFinite(cursor.y));
+  if (
+    typeof value.clientId !== "string" ||
+    typeof value.color !== "string" ||
+    (typeof value.selectedId !== "string" && value.selectedId !== null) ||
+    !validCursor
+  )
+    return null;
+  return {
+    clientId: value.clientId,
+    color: value.color,
+    cursor: cursor as Presence["cursor"],
+    selectedId: value.selectedId as string | null,
+  };
 }

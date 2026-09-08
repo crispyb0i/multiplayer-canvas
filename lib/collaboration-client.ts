@@ -1,4 +1,6 @@
 import * as Y from "yjs";
+import type { Presence } from "./collaboration";
+import { PRESENCE_MESSAGE, PRESENCE_REMOVE_MESSAGE } from "./collaboration";
 import { applyYjsUpdate, encodeYjsState } from "./yjs-document";
 
 export type CollaborationStatus = "connecting" | "connected" | "disconnected";
@@ -9,6 +11,9 @@ type CollaborationClientOptions = {
   document: Y.Doc;
   onStatusChange?: (status: CollaborationStatus) => void;
   onRemoteUpdate?: () => void;
+  clientId: string;
+  color: string;
+  onPresenceChange?: (presence: Presence[]) => void;
 };
 
 // This browser client owns only the WebSocket lifecycle. Yjs remains the
@@ -19,6 +24,7 @@ export class CollaborationClient {
   private socket: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
+  private readonly presences = new Map<string, Presence>();
 
   constructor(options: CollaborationClientOptions) {
     this.options = options;
@@ -45,6 +51,19 @@ export class CollaborationClient {
     this.socket = null;
   }
 
+  // Presence stays outside Yjs because cursors and selections are ephemeral UI
+  // state; otherwise stale users would enter document history and persistence.
+  sendPresence(update: Pick<Presence, "cursor" | "selectedId">): void {
+    const presence: Presence = {
+      clientId: this.options.clientId,
+      color: this.options.color,
+      ...update,
+    };
+    if (this.socket?.readyState === WebSocket.OPEN) {
+      this.socket.send(JSON.stringify({ type: PRESENCE_MESSAGE, presence }));
+    }
+  }
+
   private readonly onOpen = (): void => {
     this.options.onStatusChange?.("connected");
     this.socket?.send(
@@ -55,12 +74,37 @@ export class CollaborationClient {
   };
 
   private readonly onMessage = (event: MessageEvent<ArrayBuffer>): void => {
+    if (typeof event.data === "string") {
+      this.onPresenceMessage(event.data);
+      return;
+    }
     const update =
       event.data instanceof ArrayBuffer
         ? new Uint8Array(event.data)
         : new Uint8Array(event.data as unknown as ArrayBuffer);
     applyYjsUpdate(this.options.document, update);
     this.options.onRemoteUpdate?.();
+  };
+
+  private readonly onPresenceMessage = (serialized: string): void => {
+    let message: unknown;
+    try {
+      message = JSON.parse(serialized);
+    } catch {
+      return;
+    }
+    if (!message || typeof message !== "object") return;
+    const record = message as Record<string, unknown>;
+    if (record.type === PRESENCE_MESSAGE && record.presence) {
+      const presence = record.presence as Presence;
+      this.presences.set(presence.clientId, presence);
+    } else if (
+      record.type === PRESENCE_REMOVE_MESSAGE &&
+      typeof record.clientId === "string"
+    ) {
+      this.presences.delete(record.clientId);
+    } else return;
+    this.options.onPresenceChange?.([...this.presences.values()]);
   };
 
   private readonly onLocalUpdate = (

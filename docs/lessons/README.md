@@ -10,3 +10,4 @@ Read them in order:
 4. [M3 — History and undo/redo](m3-history-undo-redo.md)
 5. [M4 — Yjs without networking](m4-yjs-without-networking.md)
 6. [M5 — WebSocket collaboration](m5-websocket-collaboration.md)
+7. [M6 — Presence](m6-presence.md)

@@ -11,6 +11,7 @@ import {
   CollaborationClient,
   type CollaborationStatus,
 } from "../lib/collaboration-client";
+import type { Presence } from "../lib/collaboration";
 import {
   canRedo,
   canUndo,
@@ -51,6 +52,8 @@ export default function Editor() {
   const [collaborationStatus, setCollaborationStatus] =
     useState<CollaborationStatus>("disconnected");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [remotePresence, setRemotePresence] = useState<Presence[]>([]);
+  const collaborationClient = useRef<CollaborationClient | null>(null);
   const [viewport, setViewport] = useState({ x: 0, y: 0, scale: 1 });
   const [isSpaceDown, setIsSpaceDown] = useState(false);
   // Drag/pan state lives in refs, not useState: they change on every
@@ -83,7 +86,10 @@ export default function Editor() {
       url,
       roomId: "demo",
       document: ydocRef.current,
+      clientId: newId("client"),
+      color: "#f6c85f",
       onStatusChange: setCollaborationStatus,
+      onPresenceChange: setRemotePresence,
       onRemoteUpdate: () => {
         const syncedDocument = yDocumentToDocument(ydocRef.current);
         setDocument(syncedDocument);
@@ -93,9 +99,19 @@ export default function Editor() {
         setHistory(createHistory(syncedDocument));
       },
     });
+    collaborationClient.current = client;
     client.connect();
-    return () => client.dispose();
+    return () => {
+      client.dispose();
+      collaborationClient.current = null;
+    };
   }, []);
+
+  // Selection is local UI state, but publishing it lets peers render an
+  // awareness outline without polluting the shared document or undo stack.
+  useEffect(() => {
+    collaborationClient.current?.sendPresence({ cursor: null, selectedId });
+  }, [selectedId]);
 
   // Selection is UI state, not part of the document timeline. Reconcile it
   // after undo/redo so a restored or removed shape cannot stay selected.
@@ -196,6 +212,7 @@ export default function Editor() {
   function onShapePointerDown(event: PointerEvent<SVGGElement>, shape: Shape) {
     event.stopPropagation();
     const position = point(event);
+    collaborationClient.current?.sendPresence({ cursor: position, selectedId });
     setSelectedId(shape.id);
     drag.current = {
       id: shape.id,
@@ -212,6 +229,13 @@ export default function Editor() {
         x: pan.current!.originX + event.clientX - pan.current!.startX,
         y: pan.current!.originY + event.clientY - pan.current!.startY,
       }));
+      return;
+    }
+    if (!drag.current) {
+      collaborationClient.current?.sendPresence({
+        cursor: point(event),
+        selectedId,
+      });
       return;
     }
     if (!drag.current) return;
@@ -411,6 +435,51 @@ export default function Editor() {
                   }}
                 />
               )}
+            </g>
+          ))}
+          {remotePresence.map((presence) => (
+            <g key={presence.clientId} pointerEvents="none">
+              {presence.cursor && (
+                <circle
+                  cx={presence.cursor.x}
+                  cy={presence.cursor.y}
+                  r="6"
+                  fill={presence.color}
+                  stroke="#111827"
+                  strokeWidth="2"
+                />
+              )}
+              {presence.selectedId &&
+                document.shapes.some(
+                  (shape) => shape.id === presence.selectedId,
+                ) && (
+                  <rect
+                    x={
+                      (document.shapes.find(
+                        (shape) => shape.id === presence.selectedId,
+                      )?.x ?? 0) - 8
+                    }
+                    y={
+                      (document.shapes.find(
+                        (shape) => shape.id === presence.selectedId,
+                      )?.y ?? 0) - 8
+                    }
+                    width={
+                      (document.shapes.find(
+                        (shape) => shape.id === presence.selectedId,
+                      )?.width ?? 0) + 16
+                    }
+                    height={
+                      (document.shapes.find(
+                        (shape) => shape.id === presence.selectedId,
+                      )?.height ?? 0) + 16
+                    }
+                    fill="none"
+                    stroke={presence.color}
+                    strokeDasharray="3 3"
+                    strokeWidth="2"
+                  />
+                )}
             </g>
           ))}
         </g>
