@@ -18,9 +18,10 @@
     "*.{ts,tsx,js,jsx,mjs,json,css,md}": "prettier --write"
   },
   "dependencies": {
+    "@clerk/nextjs": "^6.39.6",
     "next": "15.5.25",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
+    "react": "^19.1.4",
+    "react-dom": "^19.1.4",
     "ws": "^8.21.3",
     "yjs": "^13.6.32"
   },
