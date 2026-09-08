@@ -9,3 +9,4 @@ Read them in order:
 3. [M2 — Single-user editor](m2-single-user-editor.md)
 4. [M3 — History and undo/redo](m3-history-undo-redo.md)
 5. [M4 — Yjs without networking](m4-yjs-without-networking.md)
+6. [M5 — WebSocket collaboration](m5-websocket-collaboration.md)

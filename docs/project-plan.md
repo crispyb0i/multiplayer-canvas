@@ -1,6 +1,6 @@
 # Multiplayer Canvas curriculum
 
-This project is built as a sequence of lessons. Each milestone should leave the app runnable, tested, and explainable in an interview. The active milestone is **M4**.
+This project is built as a sequence of lessons. Each milestone should leave the app runnable, tested, and explainable in an interview. The active milestone is **M5**.
 
 ## Milestones
 
@@ -53,3 +53,11 @@ This project is built as a sequence of lessons. Each milestone should leave the 
 - Yjs updates can be encoded, applied to another document, and converge to the same document model.
 - Concurrent independent shape-field updates merge predictably.
 - Focused Yjs synchronization tests and all repository quality gates pass.
+
+## M5 Definition of Done
+
+- A standalone WebSocket service manages in-memory rooms and relays Yjs updates.
+- Clients joining a room receive its current state and updates stay isolated between rooms.
+- Disconnect and reconnect behavior is covered by focused multi-client tests.
+- The service exposes a health endpoint and has Railway deployment configuration.
+- All repository quality gates pass.
