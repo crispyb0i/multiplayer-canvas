@@ -36,6 +36,11 @@ const movements: Record<string, { x?: number; y?: number }> = {
   ArrowUp: { y: -1 },
   ArrowDown: { y: 1 },
 };
+
+type CollaborationAuth = {
+  organizationId: string;
+  tokenProvider: () => Promise<string | null>;
+};
 // crypto.randomUUID isn't available in every test/SSR environment, so this
 // falls back to Date.now() rather than crashing; collisions there just fail
 // the document model's duplicate-id check instead of corrupting state.
@@ -43,7 +48,9 @@ function newId(prefix: string) {
   return `${prefix}-${crypto.randomUUID?.() ?? Date.now()}`;
 }
 
-export default function Editor() {
+export default function Editor({
+  collaborationAuth,
+}: { collaborationAuth?: CollaborationAuth } = {}) {
   const ydocRef = useRef(createYDocument());
   const [history, setHistory] = useState<HistoryState>(() => createHistory());
   const [document, setDocument] = useState<DocumentModel>(() =>
@@ -80,11 +87,12 @@ export default function Editor() {
   // tests remain useful without a backend by falling back to single-user mode.
   useEffect(() => {
     const url = process.env.NEXT_PUBLIC_COLLAB_URL;
-    if (!url) return;
+    if (!url || !collaborationAuth) return;
 
     const client = new CollaborationClient({
       url,
       roomId: "demo",
+      ...collaborationAuth,
       document: ydocRef.current,
       clientId: newId("client"),
       color: "#f6c85f",
@@ -105,7 +113,7 @@ export default function Editor() {
       client.dispose();
       collaborationClient.current = null;
     };
-  }, []);
+  }, [collaborationAuth]);
 
   // Selection is local UI state, but publishing it lets peers render an
   // awareness outline without polluting the shared document or undo stack.

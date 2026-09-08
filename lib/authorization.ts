@@ -7,6 +7,12 @@ export type WorkspaceIdentity = {
   organizationRole: string | null;
 };
 
+export type CollaborationIdentity = {
+  userId: string;
+  organizationId: string;
+  organizationRole: string;
+};
+
 const rolePermissions: Record<WorkspaceRole, readonly WorkspacePermission[]> = {
   "org:admin": ["read", "edit", "manage_members"],
   "org:member": ["read", "edit"],

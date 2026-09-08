@@ -143,4 +143,28 @@ describe("collaboration room transport", () => {
     );
     expect(other.messages).toEqual([]);
   });
+
+  it("rejects unauthenticated and cross-workspace joins in secure mode", () => {
+    const rooms = new CollaborationRooms({ requireAuthentication: true });
+    const unauthenticated = new FakeClient();
+    const member = new FakeClient();
+    rooms.connect(unauthenticated);
+    rooms.receive(
+      unauthenticated,
+      JSON.stringify({ type: "join", roomId: "one", organizationId: "org-1" }),
+    );
+    expect(unauthenticated.messages).toEqual([]);
+
+    rooms.connect(member);
+    rooms.authenticate(member, {
+      userId: "user-1",
+      organizationId: "org-1",
+      organizationRole: "org:member",
+    });
+    rooms.receive(
+      member,
+      JSON.stringify({ type: "join", roomId: "one", organizationId: "org-2" }),
+    );
+    expect(member.messages).toEqual([]);
+  });
 });

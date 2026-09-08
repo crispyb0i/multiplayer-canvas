@@ -14,6 +14,8 @@ type CollaborationClientOptions = {
   clientId: string;
   color: string;
   onPresenceChange?: (presence: Presence[]) => void;
+  organizationId: string;
+  tokenProvider: () => Promise<string | null>;
 };
 
 // This browser client owns only the WebSocket lifecycle. Yjs remains the
@@ -24,6 +26,7 @@ export class CollaborationClient {
   private socket: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
+  private connecting = false;
   private readonly presences = new Map<string, Presence>();
 
   constructor(options: CollaborationClientOptions) {
@@ -32,9 +35,24 @@ export class CollaborationClient {
   }
 
   connect(): void {
-    if (this.disposed || this.socket) return;
+    if (this.disposed || this.socket || this.connecting) return;
+    this.connecting = true;
+    void this.connectWithToken();
+  }
+
+  private async connectWithToken(): Promise<void> {
+    const token = await this.options.tokenProvider();
+    this.connecting = false;
+    if (this.disposed || !token) {
+      this.options.onStatusChange?.("disconnected");
+      return;
+    }
     this.options.onStatusChange?.("connecting");
-    const socket = new WebSocket(this.options.url);
+    // Browsers cannot set an Authorization header on WebSocket handshakes;
+    // the short-lived Clerk token is sent as a query parameter instead.
+    const url = new URL(this.options.url);
+    url.searchParams.set("token", token);
+    const socket = new WebSocket(url);
     socket.binaryType = "arraybuffer";
     socket.addEventListener("open", this.onOpen);
     socket.addEventListener("message", this.onMessage);
@@ -67,7 +85,11 @@ export class CollaborationClient {
   private readonly onOpen = (): void => {
     this.options.onStatusChange?.("connected");
     this.socket?.send(
-      JSON.stringify({ type: "join", roomId: this.options.roomId }),
+      JSON.stringify({
+        type: "join",
+        roomId: this.options.roomId,
+        organizationId: this.options.organizationId,
+      }),
     );
     // Send local edits made while disconnected so the room can merge them.
     this.socket?.send(encodeYjsState(this.options.document));

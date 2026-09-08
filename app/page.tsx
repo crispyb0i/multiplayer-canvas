@@ -7,6 +7,7 @@ import {
   UserButton,
 } from "@clerk/nextjs";
 import Editor from "./editor";
+import AuthenticatedEditor from "./authenticated-editor";
 
 export default function Home() {
   // Keeping this component synchronous preserves the simple jsdom test seam;
@@ -51,7 +52,7 @@ export default function Home() {
         A learning-first foundation for a real-time collaborative technical
         diagramming app.
       </p>
-      <Editor />
+      {clerkConfigured ? <AuthenticatedEditor /> : <Editor />}
     </main>
   );
 }

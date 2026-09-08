@@ -1,4 +1,8 @@
 import * as Y from "yjs";
+import {
+  canAccessWorkspace,
+  type CollaborationIdentity,
+} from "./authorization";
 
 export const JOIN_MESSAGE = "join";
 export const PRESENCE_MESSAGE = "presence";
@@ -24,9 +28,26 @@ type Room = {
 export class CollaborationRooms {
   private readonly rooms = new Map<string, Room>();
   private readonly clientRooms = new Map<CollaborationClient, string>();
+  private readonly identities = new Map<
+    CollaborationClient,
+    CollaborationIdentity
+  >();
+
+  constructor(
+    private readonly options: { requireAuthentication?: boolean } = {},
+  ) {}
 
   connect(client: CollaborationClient): void {
     this.disconnect(client);
+  }
+
+  // The WebSocket adapter verifies the token; the room hub enforces the
+  // resulting identity on every room operation.
+  authenticate(
+    client: CollaborationClient,
+    identity: CollaborationIdentity,
+  ): void {
+    this.identities.set(client, identity);
   }
 
   receive(client: CollaborationClient, data: string | Uint8Array): void {
@@ -35,6 +56,8 @@ export class CollaborationRooms {
       return;
     }
     const roomId = this.clientRooms.get(client);
+    if (this.options.requireAuthentication && !this.identities.has(client))
+      return;
     const room = roomId ? this.rooms.get(roomId) : undefined;
     if (!room) return;
     // Yjs validates update structure so one malformed client message cannot
@@ -52,6 +75,7 @@ export class CollaborationRooms {
     const roomId = this.clientRooms.get(client);
     if (!roomId) return;
     this.clientRooms.delete(client);
+    this.identities.delete(client);
     const room = this.rooms.get(roomId);
     if (!room) return;
     room.clients.delete(client);
@@ -80,7 +104,14 @@ export class CollaborationRooms {
       typeof message.roomId === "string" &&
       message.roomId.length > 0
     ) {
-      this.join(client, message.roomId);
+      const identity = this.identities.get(client);
+      if (
+        !this.options.requireAuthentication ||
+        (identity &&
+          typeof message.organizationId === "string" &&
+          canAccessWorkspace(identity, message.organizationId, "edit"))
+      )
+        this.join(client, message.roomId);
       return;
     }
     if (message.type !== PRESENCE_MESSAGE) return;
