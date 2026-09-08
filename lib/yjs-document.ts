@@ -80,6 +80,17 @@ export function applyYjsUpdate(ydoc: Y.Doc, update: Uint8Array): void {
   Y.applyUpdate(ydoc, update);
 }
 
+// Snapshot replacement supports the existing local undo controls while the
+// editor transitions to shared state. Collaborative undo policy belongs to M10.
+export function replaceYjsDocument(ydoc: Y.Doc, document: DocumentModel): void {
+  const shapes = getShapes(ydoc);
+  ydoc.transact(() => {
+    for (const id of Array.from(shapes.keys())) shapes.delete(id);
+    for (const shape of document.shapes)
+      shapes.set(shape.id, shapeToYMap(shape));
+  });
+}
+
 function getRoot(ydoc: Y.Doc): Y.Map<unknown> {
   return ydoc.getMap(ROOT_KEY);
 }

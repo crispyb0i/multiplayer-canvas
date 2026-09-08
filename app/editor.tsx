@@ -2,7 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent, WheelEvent } from "react";
-import { type Shape, type TextShape } from "../lib/document";
+import {
+  type DocumentModel,
+  type Shape,
+  type TextShape,
+} from "../lib/document";
+import {
+  CollaborationClient,
+  type CollaborationStatus,
+} from "../lib/collaboration-client";
 import {
   canRedo,
   canUndo,
@@ -10,8 +18,15 @@ import {
   executeCommand,
   redo,
   undo,
+  updateLastEntryAfter,
   type HistoryState,
 } from "../lib/history";
+import {
+  createYDocument,
+  executeYjsCommand,
+  replaceYjsDocument,
+  yDocumentToDocument,
+} from "../lib/yjs-document";
 
 const CANVAS_WIDTH = 900;
 const CANVAS_HEIGHT = 560;
@@ -29,8 +44,13 @@ function newId(prefix: string) {
 }
 
 export default function Editor() {
+  const ydocRef = useRef(createYDocument());
   const [history, setHistory] = useState<HistoryState>(() => createHistory());
-  const document = history.document;
+  const [document, setDocument] = useState<DocumentModel>(() =>
+    yDocumentToDocument(ydocRef.current),
+  );
+  const [collaborationStatus, setCollaborationStatus] =
+    useState<CollaborationStatus>("disconnected");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [viewport, setViewport] = useState({ x: 0, y: 0, scale: 1 });
   const [isSpaceDown, setIsSpaceDown] = useState(false);
@@ -53,6 +73,30 @@ export default function Editor() {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const selected = document.shapes.find((shape) => shape.id === selectedId);
 
+  // The URL is injected only in deployed environments. Local development and
+  // tests remain useful without a backend by falling back to single-user mode.
+  useEffect(() => {
+    const url = process.env.NEXT_PUBLIC_COLLAB_URL;
+    if (!url) return;
+
+    const client = new CollaborationClient({
+      url,
+      roomId: "demo",
+      document: ydocRef.current,
+      onStatusChange: setCollaborationStatus,
+      onRemoteUpdate: () => {
+        const syncedDocument = yDocumentToDocument(ydocRef.current);
+        setDocument(syncedDocument);
+        // A remote edit invalidates local snapshot history because its past
+        // entries were based on an older document. M10 will define how local
+        // undo can safely cross collaborative update boundaries.
+        setHistory(createHistory(syncedDocument));
+      },
+    });
+    client.connect();
+    return () => client.dispose();
+  }, []);
+
   // Selection is UI state, not part of the document timeline. Reconcile it
   // after undo/redo so a restored or removed shape cannot stay selected.
   useEffect(() => {
@@ -65,15 +109,35 @@ export default function Editor() {
   }, [document, selectedId]);
 
   function runCommand(command: Parameters<typeof executeCommand>[1]) {
+    const nextDocument = executeYjsCommand(ydocRef.current, command);
+    setDocument(nextDocument);
     setHistory((current) => executeCommand(current, command));
   }
 
+  function runDragCommand(command: Parameters<typeof executeCommand>[1]) {
+    const nextDocument = executeYjsCommand(ydocRef.current, command);
+    setDocument(nextDocument);
+    setHistory((current) =>
+      current.past.length === 0
+        ? executeCommand(current, command)
+        : updateLastEntryAfter(executeCommand(current, command), nextDocument),
+    );
+  }
+
   function undoDocument() {
-    setHistory((current) => undo(current));
+    const next = undo(history);
+    if (next === history) return;
+    replaceYjsDocument(ydocRef.current, next.document);
+    setDocument(next.document);
+    setHistory(next);
   }
 
   function redoDocument() {
-    setHistory((current) => redo(current));
+    const next = redo(history);
+    if (next === history) return;
+    replaceYjsDocument(ydocRef.current, next.document);
+    setDocument(next.document);
+    setHistory(next);
   }
 
   // Converts a browser pointer event into canvas-space coordinates: first
@@ -166,7 +230,7 @@ export default function Editor() {
     // rounding error and keeps the shape locked to the same point under the
     // cursor for the whole gesture.
     const { id, shape, startX, startY } = drag.current;
-    runCommand({
+    runDragCommand({
       type: "update",
       id,
       changes: {
@@ -223,7 +287,7 @@ export default function Editor() {
     }));
   }
   return (
-    <section className="mt-10" aria-label="Single-user canvas editor">
+    <section className="mt-10" aria-label="Collaborative canvas editor">
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <button
           className="cursor-pointer rounded-lg border-0 bg-accent px-3.5 py-2.5 font-bold text-[#10201b]"
@@ -255,6 +319,11 @@ export default function Editor() {
         </button>
         <span className="text-sm text-muted">
           {selected ? `Selected: ${selected.type}` : "Nothing selected"}
+        </span>
+        <span className="text-sm text-muted" aria-live="polite">
+          {process.env.NEXT_PUBLIC_COLLAB_URL
+            ? `Collaboration: ${collaborationStatus}`
+            : "Collaboration: local mode"}
         </span>
         {selected?.type === "text" && (
           <label className="text-sm text-muted">

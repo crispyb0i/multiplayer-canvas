@@ -4,7 +4,7 @@ export default function Home() {
   return (
     <main className="mx-auto max-w-[980px] px-8 py-[8vh]">
       <p className="text-[0.8rem] font-bold uppercase tracking-[0.12em] text-accent">
-        M3 · History and undo/redo
+        M5 · WebSocket collaboration
       </p>
       <h1 className="my-4 text-[clamp(3rem,8vw,6rem)] tracking-[-0.06em]">
         Multiplayer Canvas

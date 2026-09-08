@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type RectangleShape } from "./document";
+import { applyCommand, type RectangleShape } from "./document";
 import {
   canRedo,
   canUndo,
@@ -7,6 +7,7 @@ import {
   executeCommand,
   redo,
   undo,
+  updateLastEntryAfter,
 } from "./history";
 
 const rectangle: RectangleShape = {
@@ -72,5 +73,27 @@ describe("document history", () => {
     expect(redo(history)).toBe(history);
     expect(canUndo(history)).toBe(false);
     expect(canRedo(history)).toBe(false);
+  });
+
+  it("coalesces repeated drag updates into one undo entry", () => {
+    const added = executeCommand(createHistory(), {
+      type: "add",
+      shape: rectangle,
+    });
+    const firstMove = executeCommand(added, {
+      type: "update",
+      id: rectangle.id,
+      changes: { x: 20 },
+    });
+    const finalDocument = applyCommand(firstMove.document, {
+      type: "update",
+      id: rectangle.id,
+      changes: { x: 40 },
+    });
+    const coalesced = updateLastEntryAfter(firstMove, finalDocument);
+
+    expect(coalesced.past).toHaveLength(2);
+    expect(coalesced.past.at(-1)?.before.shapes[0]).toEqual(rectangle);
+    expect(coalesced.document.shapes[0]).toMatchObject({ x: 40 });
   });
 });

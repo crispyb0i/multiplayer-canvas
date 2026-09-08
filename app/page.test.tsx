@@ -5,7 +5,7 @@ import Home from "./page";
 afterEach(cleanup);
 
 describe("home page", () => {
-  it("renders the M2 editor and adds a rectangle", () => {
+  it("renders the collaborative editor and adds a rectangle", () => {
     render(<Home />);
     expect(
       screen.getByRole("heading", { name: "Multiplayer Canvas" }),
