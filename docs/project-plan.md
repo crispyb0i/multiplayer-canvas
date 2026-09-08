@@ -1,25 +1,25 @@
 # Multiplayer Canvas curriculum
 
-This project is built as a sequence of lessons. Each milestone should leave the app runnable, tested, and explainable in an interview. The active milestone is **M3**.
+This project is built as a sequence of lessons. Each milestone should leave the app runnable, tested, and explainable in an interview. The active milestone is **M4**.
 
 ## Milestones
 
-| Milestone | Lesson | Main outcome |
-| --- | --- | --- |
-| M0 | Repository and engineering baseline | Next.js app, quality gates, CI, project conventions |
-| M1 | Local document model | Typed shapes, commands, serialization, validation |
-| M2 | Single-user editor | Canvas interactions, selection, pan/zoom, keyboard input |
-| M3 | History and undo/redo | Command history with focused tests |
-| M4 | Yjs without networking | CRDT document model synced-state tests in one process |
-| M5 | WebSocket collaboration | Room transport, reconnect behavior, multi-client tests |
-| M6 | Presence | Cursors, selections, awareness, ephemeral state |
-| M7 | Authentication and authorization | Users, sessions, workspace membership, permission boundaries |
-| M8 | Neon persistence | PostgreSQL metadata, snapshots, migrations, recovery path |
-| M9 | Offline and reconnect sync | Local persistence, queued updates, conflict/recovery UX |
-| M10 | Collaborative history | Local undo semantics remote update boundaries |
-| M11 | Performance | Rendering strategy, profiling, large-document behavior |
-| M12 | Accessibility product polish | Keyboard workflows, focus, announcements, empty/error states |
-| M13 | Portfolio packaging | Observability, CI/CD, architecture notes, demo case study |
+| Milestone | Lesson                              | Main outcome                                                 |
+| --------- | ----------------------------------- | ------------------------------------------------------------ |
+| M0        | Repository and engineering baseline | Next.js app, quality gates, CI, project conventions          |
+| M1        | Local document model                | Typed shapes, commands, serialization, validation            |
+| M2        | Single-user editor                  | Canvas interactions, selection, pan/zoom, keyboard input     |
+| M3        | History and undo/redo               | Command history with focused tests                           |
+| M4        | Yjs without networking              | CRDT document model synced-state tests in one process        |
+| M5        | WebSocket collaboration             | Room transport, reconnect behavior, multi-client tests       |
+| M6        | Presence                            | Cursors, selections, awareness, ephemeral state              |
+| M7        | Authentication and authorization    | Users, sessions, workspace membership, permission boundaries |
+| M8        | Neon persistence                    | PostgreSQL metadata, snapshots, migrations, recovery path    |
+| M9        | Offline and reconnect sync          | Local persistence, queued updates, conflict/recovery UX      |
+| M10       | Collaborative history               | Local undo semantics remote update boundaries                |
+| M11       | Performance                         | Rendering strategy, profiling, large-document behavior       |
+| M12       | Accessibility product polish        | Keyboard workflows, focus, announcements, empty/error states |
+| M13       | Portfolio packaging                 | Observability, CI/CD, architecture notes, demo case study    |
 
 ## M1 Definition of Done
 
@@ -45,3 +45,11 @@ This project is built as a sequence of lessons. Each milestone should leave the 
 - New changes after undo discard the redo branch.
 - Undo and redo behavior has focused tests for add, update, remove, and branch invalidation.
 - All repository quality gates pass.
+
+## M4 Definition of Done
+
+- Yjs stores the versioned document and shapes without networking.
+- Existing add, update, and remove commands mutate Yjs state through a validated adapter.
+- Yjs updates can be encoded, applied to another document, and converge to the same document model.
+- Concurrent independent shape-field updates merge predictably.
+- Focused Yjs synchronization tests and all repository quality gates pass.

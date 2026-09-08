@@ -2,9 +2,9 @@
 
 Multiplayer Canvas is a learning-first portfolio project: a real-time collaborative technical diagramming workspace designed to demonstrate senior frontend engineering decisions.
 
-## Current milestone: M3
+## Current milestone: M4
 
-M1 defines typed rectangle and text shapes, immutable add/update/remove commands, versioned JSON serialization, and runtime validation. The editor and collaboration layers are intentionally deferred.
+M4 adds a Yjs-backed document adapter and in-process synchronization tests. Networking, presence, persistence, and collaborative history remain deferred to later milestones.
 
 ```bash
 npm install
