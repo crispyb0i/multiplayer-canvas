@@ -2,16 +2,35 @@
 
 ## Goal
 
-Create a framework-independent document model that the editor can use locally and later adapt to history and collaboration.
+Create a framework-independent document model that the editor can use locally and that later milestones can adapt to history and collaboration.
 
-## What to study
+## Concepts
 
-- Why discriminated unions make shape and command handling readable.
-- Why commands are a boundary between UI intent and document state changes.
-- Why updates return a new document instead of mutating the old one.
-- Why serialized data must be validated at runtime even with strict TypeScript types.
-- Why a document version gives future migrations an explicit compatibility boundary.
+- How discriminated unions make rectangle and text shape handling explicit.
+- Why commands form the boundary between user intent and document state changes.
+- Why mutations return new documents instead of modifying existing snapshots.
+- Why serialized data still needs runtime validation despite strict TypeScript types.
+- How a document version creates an explicit compatibility and migration boundary.
 
-## Verification evidence
+## Implementation
 
-Run `npm test`, `npm run typecheck`, `npm run lint`, and `npm run build`.
+- Defined typed rectangle and text shapes.
+- Added immutable add, update, and remove commands.
+- Added versioned JSON serialization and deserialization.
+- Added validation for malformed documents, invalid shapes, duplicate IDs, and invalid command targets.
+- Added focused model tests without introducing a runtime dependency.
+
+## Verification
+
+Run:
+
+```bash
+npm test
+npm run typecheck
+npm run lint
+npm run build
+```
+
+## Interview takeaway
+
+The UI does not own document rules. A small, typed, framework-independent model gives the editor, history layer, and future sync layer one predictable mutation boundary.

@@ -1,3 +1,11 @@
 # Lessons
 
-Each milestone gets a short lesson note describing the goal, concepts to study, implementation steps, verification evidence, and interview takeaways. M0's lesson is the repository itself.
+These notes explain the project milestone by milestone. Each one records the goal, concepts, implementation, verification, and interview takeaway so the repository shows both what was built and why the design evolved.
+
+Read them in order:
+
+1. [M0 — Repository and engineering baseline](m0-repository-baseline.md)
+2. [M1 — Local document model](m1-local-document-model.md)
+3. [M2 — Single-user editor](m2-single-user-editor.md)
+4. [M3 — History and undo/redo](m3-history-undo-redo.md)
+5. [M4 — Yjs without networking](m4-yjs-without-networking.md)

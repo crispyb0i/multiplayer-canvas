@@ -6,6 +6,12 @@ Multiplayer Canvas is a learning-first portfolio project: a real-time collaborat
 
 M4 adds a Yjs-backed document adapter and in-process synchronization tests. Networking, presence, persistence, and collaborative history remain deferred to later milestones.
 
+Project documentation:
+
+- [Milestone lessons](docs/lessons/README.md) explain the implementation and tradeoffs in sequence.
+- [Architecture decisions](docs/adr/README.md) record decisions that affect system boundaries.
+- [Project plan](docs/project-plan.md) defines each milestone and its Definition of Done.
+
 ```bash
 npm install
 npm run dev
@@ -20,4 +26,4 @@ npm run lint
 npm run build
 ```
 
-See [`docs/project-plan.md`](docs/project-plan.md) and [`AGENTS.md`](AGENTS.md) for the curriculum and implementation contract.
+See [AGENTS.md](AGENTS.md) for the curriculum implementation contract.

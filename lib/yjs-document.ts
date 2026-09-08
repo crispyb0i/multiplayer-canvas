@@ -23,8 +23,7 @@ export function createYDocument(
   const root = getRoot(ydoc);
   ydoc.transact(() => {
     root.set(VERSION_KEY, document.version);
-    const shapes = new Y.Map<YShape>();
-    root.set(SHAPES_KEY, shapes);
+    const shapes = getShapes(ydoc);
     for (const shape of document.shapes)
       shapes.set(shape.id, shapeToYMap(shape));
   });
@@ -34,11 +33,7 @@ export function createYDocument(
 // Conversion validates Yjs data at the trust boundary. This protects the
 // typed editor from malformed persisted or network-delivered CRDT updates.
 export function yDocumentToDocument(ydoc: Y.Doc): DocumentModel {
-  const root = getRoot(ydoc);
-  const shapes = root.get(SHAPES_KEY);
-  if (!(shapes instanceof Y.Map)) {
-    return createDocument();
-  }
+  const shapes = getShapes(ydoc);
 
   const plainShapes = Array.from(shapes.values())
     .map((shape) => yMapToShape(shape))
@@ -90,13 +85,10 @@ function getRoot(ydoc: Y.Doc): Y.Map<unknown> {
 }
 
 function getShapes(ydoc: Y.Doc): Y.Map<YShape> {
-  const root = getRoot(ydoc);
-  const existing = root.get(SHAPES_KEY);
-  if (existing instanceof Y.Map) return existing as Y.Map<YShape>;
-
-  const shapes = new Y.Map<YShape>();
-  root.set(SHAPES_KEY, shapes);
-  return shapes;
+  // A top-level shared type has one stable identity per Y.Doc. Keeping it out
+  // of the initialized metadata map avoids competing nested-map roots when
+  // two fresh peers exchange their first update.
+  return ydoc.getMap<YShape>(SHAPES_KEY);
 }
 
 function shapeToYMap(shape: Shape): YShape {
