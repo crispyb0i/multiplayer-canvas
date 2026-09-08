@@ -32,9 +32,7 @@ websocketServer.on("connection", async (socket, request) => {
   socket.on("close", () => rooms.disconnect(socket));
 });
 
-async function authenticateRequest(
-  requestUrl: string | undefined,
-): Promise<{
+async function authenticateRequest(requestUrl: string | undefined): Promise<{
   userId: string;
   organizationId: string;
   organizationRole: string;
