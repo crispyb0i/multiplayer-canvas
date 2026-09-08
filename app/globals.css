@@ -1,11 +1,18 @@
-:root { color-scheme: dark; --bg: #10131a; --panel: #1a2030; --text: #eef2ff; --muted: #aab4cc; --accent: #8ee6c5; }
-* { box-sizing: border-box; }
-html, body { margin: 0; min-height: 100%; }
-body { background: radial-gradient(circle at 20% 10%, #263754, var(--bg) 45%); color: var(--text); font-family: Arial, sans-serif; }
-.shell { margin: 0 auto; max-width: 760px; padding: 16vh 2rem; }
-.eyebrow { color: var(--accent); font-size: .8rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
-h1 { font-size: clamp(3rem, 8vw, 6rem); letter-spacing: -.06em; margin: 1rem 0; }
-.lede { color: var(--muted); font-size: 1.25rem; line-height: 1.6; max-width: 38rem; }
-.status-card { background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid #35405a; border-radius: 1rem; margin-top: 3rem; padding: 1.5rem; }
-.status-card h2 { font-size: 1.1rem; margin-top: 0; }
-.status-card p { color: var(--muted); line-height: 1.6; margin-bottom: 0; }
+@import "tailwindcss";
+
+/* @theme registers these as design tokens: Tailwind auto-generates
+   utilities like bg-accent / text-muted from each --color-* variable,
+   so the palette stays in one place instead of scattered hex literals. */
+@theme {
+  --color-bg: #10131a;
+  --color-panel: #1a2030;
+  --color-ink: #eef2ff;
+  --color-muted: #aab4cc;
+  --color-accent: #8ee6c5;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}

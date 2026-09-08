@@ -7,5 +7,11 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body>{children}</body></html>;
+  return (
+    <html lang="en" style={{ colorScheme: "dark" }}>
+      <body className="min-h-screen bg-bg font-sans text-ink [background-image:radial-gradient(circle_at_20%_10%,#263754,var(--color-bg)_45%)]">
+        {children}
+      </body>
+    </html>
+  );
 }
