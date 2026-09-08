@@ -76,22 +76,6 @@ export function canRedo(history: HistoryState): boolean {
 // Dragging produces many intermediate documents, but users expect one undo
 // action to reverse one gesture. Update the active entry instead of growing
 // the timeline for every pointermove event.
-export function updateLastEntryAfter(
-  history: HistoryState,
-  document: DocumentModel,
-): HistoryState {
-  const entry = history.past.at(-1);
-  if (!entry) return history;
-  return {
-    ...history,
-    document: cloneDocument(document),
-    past: [
-      ...history.past.slice(0, -1),
-      { ...entry, after: cloneDocument(document) },
-    ],
-  };
-}
-
 function cloneDocument(document: DocumentModel): DocumentModel {
   // Copy each shape as well as the array: a history snapshot must not share
   // mutable object identity with a caller that might later edit a shape.

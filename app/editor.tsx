@@ -18,7 +18,6 @@ import {
   executeCommand,
   redo,
   undo,
-  updateLastEntryAfter,
   type HistoryState,
 } from "../lib/history";
 import {
@@ -63,6 +62,7 @@ export default function Editor() {
     startX: number;
     startY: number;
     shape: Shape;
+    latestShape: Shape;
   } | null>(null);
   const pan = useRef<{
     startX: number;
@@ -112,16 +112,6 @@ export default function Editor() {
     const nextDocument = executeYjsCommand(ydocRef.current, command);
     setDocument(nextDocument);
     setHistory((current) => executeCommand(current, command));
-  }
-
-  function runDragCommand(command: Parameters<typeof executeCommand>[1]) {
-    const nextDocument = executeYjsCommand(ydocRef.current, command);
-    setDocument(nextDocument);
-    setHistory((current) =>
-      current.past.length === 0
-        ? executeCommand(current, command)
-        : updateLastEntryAfter(executeCommand(current, command), nextDocument),
-    );
   }
 
   function undoDocument() {
@@ -212,6 +202,7 @@ export default function Editor() {
       startX: position.x,
       startY: position.y,
       shape,
+      latestShape: shape,
     };
   }
   function onPointerMove(event: PointerEvent<SVGSVGElement>) {
@@ -230,16 +221,33 @@ export default function Editor() {
     // rounding error and keeps the shape locked to the same point under the
     // cursor for the whole gesture.
     const { id, shape, startX, startY } = drag.current;
-    runDragCommand({
-      type: "update",
+    const command = {
+      type: "update" as const,
       id,
       changes: {
         x: shape.x + position.x - startX,
         y: shape.y + position.y - startY,
       },
-    });
+    };
+    const nextDocument = executeYjsCommand(ydocRef.current, command);
+    drag.current.latestShape =
+      nextDocument.shapes.find((item) => item.id === id) ?? shape;
+    setDocument(nextDocument);
   }
   function stopPointer() {
+    if (drag.current && drag.current.latestShape !== drag.current.shape) {
+      const { id, latestShape } = drag.current;
+      setHistory((current) =>
+        executeCommand(current, {
+          type: "update",
+          id,
+          changes: {
+            x: latestShape.x,
+            y: latestShape.y,
+          },
+        }),
+      );
+    }
     pan.current = null;
     drag.current = null;
   }
