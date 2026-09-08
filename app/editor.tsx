@@ -23,14 +23,20 @@ export default function Editor() {
   // closures inside the pointer handlers between mousedown and mouseup.
   const drag = useRef<{ id: string; startX: number; startY: number; shape: Shape } | null>(null);
   const pan = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
   const selected = document.shapes.find((shape) => shape.id === selectedId);
 
   // Converts a browser pointer event into canvas-space coordinates: first
   // scale from CSS pixels to the SVG's viewBox units (in case the element is
   // rendered at a different size than CANVAS_WIDTH/HEIGHT), then undo the
   // pan/zoom transform applied to the <g> the shapes live in.
-  function point(event: PointerEvent<SVGSVGElement>) {
-    const bounds = event.currentTarget.getBoundingClientRect();
+  //
+  // Always measures the <svg> itself via svgRef, not event.currentTarget:
+  // shape drag events originate on a per-shape <g>, whose bounding rect is
+  // sized to that shape's content rather than the full canvas, which made
+  // the shape jump the instant a drag started.
+  function point(event: { clientX: number; clientY: number }) {
+    const bounds = svgRef.current!.getBoundingClientRect();
     const canvasX = ((event.clientX - bounds.left) / bounds.width) * CANVAS_WIDTH;
     const canvasY = ((event.clientY - bounds.top) / bounds.height) * CANVAS_HEIGHT;
     return { x: (canvasX - viewport.x) / viewport.scale, y: (canvasY - viewport.y) / viewport.scale };
@@ -55,7 +61,7 @@ export default function Editor() {
   // <svg> background, which would otherwise clear the selection we just set.
   function onShapePointerDown(event: PointerEvent<SVGGElement>, shape: Shape) {
     event.stopPropagation();
-    const position = point(event as PointerEvent<SVGSVGElement>);
+    const position = point(event);
     setSelectedId(shape.id);
     drag.current = { id: shape.id, startX: position.x, startY: position.y, shape };
   }
@@ -127,6 +133,7 @@ export default function Editor() {
         )}
       </div>
       <svg
+        ref={svgRef}
         aria-label="Drawing canvas"
         className="block w-full cursor-crosshair rounded-xl border border-[#35405a] bg-[#111827] outline-none focus:border-accent focus:shadow-[0_0_0_2px_color-mix(in_srgb,var(--color-accent)_30%,transparent)]"
         role="application"

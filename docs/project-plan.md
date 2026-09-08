@@ -1,6 +1,6 @@
 # Multiplayer Canvas curriculum
 
-This project is built as a sequence of lessons. Each milestone should leave the app runnable, tested, and explainable in an interview. The active milestone is **M2**.
+This project is built as a sequence of lessons. Each milestone should leave the app runnable, tested, and explainable in an interview. The active milestone is **M3**.
 
 ## Milestones
 
@@ -37,3 +37,11 @@ This project is built as a sequence of lessons. Each milestone should leave the 
 - Editor interactions update the document through immutable model commands.
 - Editor and page styling uses Tailwind CSS instead of handwritten `globals.css`, as a deliberate exercise in a modern utility-first CSS framework.
 - Focused editor tests and all repository quality gates pass.
+
+## M3 Definition of Done
+
+- Commands are recorded as history entries without mutating prior document snapshots.
+- Users can undo and redo document changes.
+- New changes after undo discard the redo branch.
+- Undo and redo behavior has focused tests for add, update, remove, and branch invalidation.
+- All repository quality gates pass.
