@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent, WheelEvent } from "react";
 import {
   type DocumentModel,
@@ -37,6 +37,53 @@ const movements: Record<string, { x?: number; y?: number }> = {
   ArrowUp: { y: -1 },
   ArrowDown: { y: 1 },
 };
+
+const ShapeVisual = memo(function ShapeVisual({
+  shape,
+  selected,
+}: {
+  shape: Shape;
+  selected: boolean;
+}) {
+  // Memoizing the visual keeps presence, sync-status, and toolbar updates from
+  // rebuilding unchanged SVG nodes. The parent still owns pointer behavior so
+  // interaction state does not leak into this render-only component.
+  return (
+    <>
+      {shape.type === "rectangle" ? (
+        <rect
+          x={shape.x}
+          y={shape.y}
+          width={shape.width}
+          height={shape.height}
+          rx="8"
+          fill={shape.fill}
+        />
+      ) : (
+        <text x={shape.x} y={shape.y + 28} fill={shape.fill} fontSize="22">
+          {shape.text}
+        </text>
+      )}
+      {selected && (
+        // Tailwind has no utility for SVG presentation attributes like
+        // stroke-dasharray, so the selection outline stays inline style.
+        <rect
+          x={shape.x - 6}
+          y={shape.y - 6}
+          width={shape.width + 12}
+          height={shape.height + 12}
+          style={{
+            fill: "none",
+            stroke: "#ffffff",
+            strokeDasharray: "5 4",
+            strokeWidth: 2,
+            pointerEvents: "none",
+          }}
+        />
+      )}
+    </>
+  );
+});
 
 type CollaborationAuth = {
   organizationId: string;
@@ -88,6 +135,10 @@ export default function Editor({
   } | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const selected = document.shapes.find((shape) => shape.id === selectedId);
+  const shapesById = useMemo(
+    () => new Map(document.shapes.map((shape) => [shape.id, shape])),
+    [document.shapes],
+  );
   const collaborativeMode = Boolean(
     process.env.NEXT_PUBLIC_COLLAB_URL && collaborationAuth,
   );
@@ -453,42 +504,7 @@ export default function Editor({
               key={shape.id}
               onPointerDown={(event) => onShapePointerDown(event, shape)}
             >
-              {shape.type === "rectangle" ? (
-                <rect
-                  x={shape.x}
-                  y={shape.y}
-                  width={shape.width}
-                  height={shape.height}
-                  rx="8"
-                  fill={shape.fill}
-                />
-              ) : (
-                <text
-                  x={shape.x}
-                  y={shape.y + 28}
-                  fill={shape.fill}
-                  fontSize="22"
-                >
-                  {shape.text}
-                </text>
-              )}
-              {selectedId === shape.id && (
-                // Tailwind has no utility for SVG presentation attributes like
-                // stroke-dasharray, so the selection outline stays inline style.
-                <rect
-                  x={shape.x - 6}
-                  y={shape.y - 6}
-                  width={shape.width + 12}
-                  height={shape.height + 12}
-                  style={{
-                    fill: "none",
-                    stroke: "#ffffff",
-                    strokeDasharray: "5 4",
-                    strokeWidth: 2,
-                    pointerEvents: "none",
-                  }}
-                />
-              )}
+              <ShapeVisual shape={shape} selected={selectedId === shape.id} />
             </g>
           ))}
           {remotePresence.map((presence) => (
@@ -503,37 +519,20 @@ export default function Editor({
                   strokeWidth="2"
                 />
               )}
-              {presence.selectedId &&
-                document.shapes.some(
-                  (shape) => shape.id === presence.selectedId,
-                ) && (
-                  <rect
-                    x={
-                      (document.shapes.find(
-                        (shape) => shape.id === presence.selectedId,
-                      )?.x ?? 0) - 8
-                    }
-                    y={
-                      (document.shapes.find(
-                        (shape) => shape.id === presence.selectedId,
-                      )?.y ?? 0) - 8
-                    }
-                    width={
-                      (document.shapes.find(
-                        (shape) => shape.id === presence.selectedId,
-                      )?.width ?? 0) + 16
-                    }
-                    height={
-                      (document.shapes.find(
-                        (shape) => shape.id === presence.selectedId,
-                      )?.height ?? 0) + 16
-                    }
-                    fill="none"
-                    stroke={presence.color}
-                    strokeDasharray="3 3"
-                    strokeWidth="2"
-                  />
-                )}
+              {presence.selectedId && shapesById.has(presence.selectedId) && (
+                <rect
+                  x={(shapesById.get(presence.selectedId)?.x ?? 0) - 8}
+                  y={(shapesById.get(presence.selectedId)?.y ?? 0) - 8}
+                  width={(shapesById.get(presence.selectedId)?.width ?? 0) + 16}
+                  height={
+                    (shapesById.get(presence.selectedId)?.height ?? 0) + 16
+                  }
+                  fill="none"
+                  stroke={presence.color}
+                  strokeDasharray="3 3"
+                  strokeWidth="2"
+                />
+              )}
             </g>
           ))}
         </g>

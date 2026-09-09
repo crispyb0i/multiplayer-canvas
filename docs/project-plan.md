@@ -1,8 +1,8 @@
 # Multiplayer Canvas curriculum
 
-Active milestone: M10
+Active milestone: M11
 
-This project is built as a sequence of lessons. Each milestone should leave the app runnable, tested, and explainable in an interview. The active milestone is **M10**.
+This project is built as a sequence of lessons. Each milestone should leave the app runnable, tested, and explainable in an interview. The active milestone is **M11**.
 
 ## Milestones
 
@@ -120,3 +120,36 @@ This project is built as a sequence of lessons. Each milestone should leave the 
 6. Connect the state machine to the editor UI with a pending-update count and
    non-destructive retry or reset-local-cache path.
 7. Add adapter, client, and editor tests, then run all repository quality gates.
+
+## M10 Definition of Done
+
+- Local collaborative commands use a tracked Yjs transaction origin.
+- Yjs `UndoManager` undoes and redoes only this client’s local commands.
+- Remote updates are applied with a separate origin and create local history
+  boundaries without overwriting unrelated peer changes.
+- Single-user mode retains snapshot-based history.
+- Focused collaborative history tests and all repository quality gates pass.
+
+## M11 Definition of Done
+
+- Shape rendering avoids rebuilding unchanged SVG visuals during toolbar,
+  presence, and synchronization updates.
+- Presence selection lookups use indexed access rather than repeated full-array
+  scans.
+- A representative large document round-trips through Yjs without data loss.
+- Performance observations and remaining tradeoffs are recorded in the M11
+  lesson.
+- All repository quality gates pass.
+
+## M11 Implementation Plan
+
+1. Establish a repeatable baseline with a 1,000-shape document and browser
+   profiling for presence updates, selection, dragging, and remote sync.
+2. Keep shape visuals in a memoized render component so unrelated parent state
+   changes preserve unchanged SVG subtrees.
+3. Index document shapes by ID for collaborator selection outlines and other
+   repeated lookups.
+4. Compare the baseline and optimized paths, then optimize only if profiling
+   identifies a remaining hotspot.
+5. Document the rendering strategy, large-document behavior, and measured
+   limits before running the full quality gates.

@@ -85,4 +85,19 @@ describe("Yjs document adapter", () => {
     });
     expect(yDocumentToDocument(first)).toEqual(yDocumentToDocument(second));
   });
+
+  it("round-trips a large document without losing shapes", () => {
+    const shapes = Array.from({ length: 1000 }, (_, index) => ({
+      ...rectangle,
+      id: `shape-${index}`,
+      x: index % 50,
+      y: Math.floor(index / 50),
+    }));
+    const source = createYDocument(createDocument(shapes));
+    const restored = createYDocument();
+
+    applyYjsUpdate(restored, encodeYjsState(source));
+
+    expect(yDocumentToDocument(restored).shapes).toHaveLength(1000);
+  });
 });

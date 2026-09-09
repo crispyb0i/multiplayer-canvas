@@ -14,3 +14,5 @@ Read them in order:
 8. [M7 — Authentication and authorization](m7-authentication-authorization.md)
 9. [M8 — Neon persistence](m8-neon-persistence.md)
 10. [M9 — Offline and reconnect sync](m9-offline-reconnect-sync.md)
+11. [M10 — Collaborative history](m10-collaborative-history.md)
+12. [M11 — Performance](m11-performance.md)
