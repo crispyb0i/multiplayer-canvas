@@ -2,11 +2,11 @@
 
 Multiplayer Canvas is a learning-first portfolio project: a real-time collaborative technical diagramming workspace designed to demonstrate senior frontend engineering decisions.
 
-## Current milestone: M7
+## Current milestone: M8
 
-M7 adds Clerk authentication and organization-backed workspace access. The
-authorization policy keeps workspace membership and role checks explicit before
-future collaboration-server and persistence work.
+M8 adds Neon persistence for workspace metadata and versioned Yjs snapshots.
+Clerk authentication and organization-backed workspace access remain the
+authorization boundary for collaboration.
 
 Project documentation:
 

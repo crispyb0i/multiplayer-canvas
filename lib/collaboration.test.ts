@@ -48,7 +48,7 @@ describe("collaboration room transport", () => {
     Y.applyUpdate(secondDocument, update as Uint8Array);
 
     expect(yDocumentToDocument(secondDocument).shapes).toEqual([rectangle]);
-    expect(first.messages).toEqual([]);
+    expect(first.messages).toEqual([JSON.stringify({ type: "sync-ack" })]);
   });
 
   it("sends current room state to a reconnecting client", () => {
@@ -205,7 +205,7 @@ describe("collaboration room transport", () => {
     expect(client.messages[0]).toBeInstanceOf(Uint8Array);
 
     rooms.receive(client, encodeYjsState(createYDocument()));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 600));
     expect(persistence.saveSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         organizationId: "org-1",

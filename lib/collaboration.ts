@@ -48,6 +48,12 @@ export class CollaborationRooms {
     CollaborationIdentity
   >();
   private readonly loadingRooms = new Map<string, Promise<Room | null>>();
+  private readonly snapshotTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
+  private readonly pendingSnapshots = new Map<string, SnapshotRecord>();
+  private readonly snapshotWrites = new Map<string, Promise<void>>();
 
   constructor(
     private readonly options: {
@@ -75,6 +81,7 @@ export class CollaborationRooms {
       return;
     }
     const roomId = this.clientRooms.get(client);
+    if (!roomId) return;
     if (this.options.requireAuthentication && !this.identities.has(client))
       return;
     const room = roomId ? this.rooms.get(roomId) : undefined;
@@ -88,6 +95,7 @@ export class CollaborationRooms {
     }
     const update = Y.encodeStateAsUpdate(room.document);
     room.version += 1;
+    client.send(JSON.stringify({ type: "sync-ack" }));
     for (const peer of room.clients) if (peer !== client) peer.send(update);
     const organizationId = room.organizationId;
     if (this.options.persistence && organizationId) {
@@ -97,11 +105,7 @@ export class CollaborationRooms {
         snapshot: update,
         version: room.version,
       };
-      void this.options.persistence.saveSnapshot(snapshot).catch((error) => {
-        // Keep serving the in-memory CRDT, but surface persistence failure so
-        // operations can alert/retry instead of pretending data was durable.
-        console.error("Failed to persist collaboration snapshot", error);
-      });
+      this.scheduleSnapshot(roomId, snapshot);
     }
   }
 
@@ -120,6 +124,37 @@ export class CollaborationRooms {
         type: PRESENCE_REMOVE_MESSAGE,
         clientId: presence.clientId,
       });
+    if (room.clients.size === 0) this.flushSnapshot(roomId);
+  }
+
+  private scheduleSnapshot(roomId: string, snapshot: SnapshotRecord): void {
+    this.pendingSnapshots.set(roomId, snapshot);
+    const existingTimer = this.snapshotTimers.get(roomId);
+    if (existingTimer) clearTimeout(existingTimer);
+    this.snapshotTimers.set(
+      roomId,
+      setTimeout(() => this.flushSnapshot(roomId), 500),
+    );
+  }
+
+  private flushSnapshot(roomId: string): void {
+    const timer = this.snapshotTimers.get(roomId);
+    if (timer) clearTimeout(timer);
+    this.snapshotTimers.delete(roomId);
+    const snapshot = this.pendingSnapshots.get(roomId);
+    if (!snapshot || !this.options.persistence) return;
+    this.pendingSnapshots.delete(roomId);
+
+    // Serialize writes per room: a slow request must not let an older
+    // snapshot finish after a newer one and regress durable state.
+    const previous = this.snapshotWrites.get(roomId) ?? Promise.resolve();
+    const write = previous
+      .catch(() => undefined)
+      .then(() => this.options.persistence!.saveSnapshot(snapshot))
+      .catch((error) => {
+        console.error("Failed to persist collaboration snapshot", error);
+      });
+    this.snapshotWrites.set(roomId, write);
   }
 
   private handleControlMessage(
@@ -186,6 +221,7 @@ export class CollaborationRooms {
     room.clients.add(client);
     this.clientRooms.set(client, roomId);
     client.send(Y.encodeStateAsUpdate(room.document));
+    client.send(JSON.stringify({ type: "sync-ready" }));
     for (const presence of room.presence.values())
       client.send(JSON.stringify({ type: PRESENCE_MESSAGE, presence }));
   }
@@ -211,6 +247,7 @@ export class CollaborationRooms {
     room.clients.add(client);
     this.clientRooms.set(client, roomKey);
     client.send(Y.encodeStateAsUpdate(room.document));
+    client.send(JSON.stringify({ type: "sync-ready" }));
     for (const presence of room.presence.values())
       client.send(JSON.stringify({ type: PRESENCE_MESSAGE, presence }));
   }

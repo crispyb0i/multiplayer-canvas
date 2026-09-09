@@ -27,6 +27,8 @@ memory.
   Yjs snapshot bytes.
 - Wired room startup recovery and post-update snapshot persistence into the
   authenticated WebSocket service, scoped by organization and document.
+- Debounced snapshot writes by room and serialized writes to avoid excessive
+  database traffic or out-of-order durable versions during rapid edits.
 - Applied both migrations to the `multiplayer-canvas` Neon development
   project and confirmed a second migration run is idempotent.
 

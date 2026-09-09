@@ -58,6 +58,7 @@ export default function Editor({
   );
   const [collaborationStatus, setCollaborationStatus] =
     useState<CollaborationStatus>("disconnected");
+  const [pendingUpdates, setPendingUpdates] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [remotePresence, setRemotePresence] = useState<Presence[]>([]);
   const collaborationClient = useRef<CollaborationClient | null>(null);
@@ -97,6 +98,7 @@ export default function Editor({
       clientId: newId("client"),
       color: "#f6c85f",
       onStatusChange: setCollaborationStatus,
+      onPendingChange: setPendingUpdates,
       onPresenceChange: setRemotePresence,
       onRemoteUpdate: () => {
         const syncedDocument = yDocumentToDocument(ydocRef.current);
@@ -362,9 +364,21 @@ export default function Editor({
         </span>
         <span className="text-sm text-muted" aria-live="polite">
           {process.env.NEXT_PUBLIC_COLLAB_URL
-            ? `Collaboration: ${collaborationStatus}`
+            ? `Collaboration: ${collaborationStatus}${pendingUpdates ? ` (${pendingUpdates} pending)` : ""}`
             : "Collaboration: local mode"}
         </span>
+        {collaborationStatus === "error" && (
+          <button
+            className="cursor-pointer rounded-md border border-[#b86b6b] bg-panel px-2.5 py-2 text-sm text-ink"
+            onClick={() => {
+              void collaborationClient.current?.clearLocalState().then(() => {
+                collaborationClient.current?.connect();
+              });
+            }}
+          >
+            Reset local sync data
+          </button>
+        )}
         {selected?.type === "text" && (
           <label className="text-sm text-muted">
             Text{" "}

@@ -1,8 +1,8 @@
 # Multiplayer Canvas curriculum
 
-Active milestone: M8
+Active milestone: M10
 
-This project is built as a sequence of lessons. Each milestone should leave the app runnable, tested, and explainable in an interview. The active milestone is **M6**.
+This project is built as a sequence of lessons. Each milestone should leave the app runnable, tested, and explainable in an interview. The active milestone is **M10**.
 
 ## Milestones
 
@@ -71,3 +71,52 @@ This project is built as a sequence of lessons. Each milestone should leave the 
 - Presence is isolated by room and removed when a client disconnects.
 - Invalid presence payloads are ignored without affecting document updates.
 - All repository quality gates pass.
+
+## M8 Definition of Done
+
+- PostgreSQL migrations create reproducible workspace and document snapshot
+  tables.
+- Workspace metadata and versioned Yjs snapshots load and save within
+  organization and document boundaries.
+- A room restores its durable snapshot before admitting clients.
+- Snapshot writes are debounced and serialized to avoid excessive or
+  out-of-order writes.
+- Restore failures prevent room admission instead of presenting an empty
+  document; write failures keep the live room available and are surfaced for
+  retry or observability.
+- Migration idempotency and persistence recovery behavior are covered by
+  focused tests, and all repository quality gates pass.
+
+## M9 Definition of Done
+
+- A browser-side local store restores the latest known Yjs document and pending
+  outbound updates after refresh or process restart.
+- Local edits made without an open collaboration connection are queued durably
+  and survive tab close.
+- Reconnect syncs local state with the server, then drains pending updates only
+  after the connection is ready.
+- Queue entries are acknowledged or retried safely; duplicate delivery is
+  harmless because Yjs updates are idempotent.
+- The editor exposes connection and sync state, pending-work state, and a
+  recoverable error when storage or synchronization fails.
+- Focused tests cover reload recovery, offline edits, reconnect delivery,
+  retries, duplicate updates, malformed stored data, and storage failures.
+- All repository quality gates pass.
+
+## M9 Implementation Plan
+
+1. Define the offline state machine and contracts: `offline`, `connecting`,
+   `syncing`, `online`, and `error`, plus a versioned local-record format.
+2. Add a small browser-only persistence adapter using IndexedDB. Store one
+   document record and an ordered outbound-update queue per organization and
+   document; keep credentials and server metadata out of the store.
+3. Refactor `CollaborationClient` so local updates are persisted before network
+   delivery, queued while disconnected, and removed only after sync succeeds.
+   Keep Yjs responsible for merge semantics.
+4. Make reconnect two-phase: join and apply the server state, then send the
+   durable queue. Do not treat reconnect as a fresh empty document.
+5. Add bounded retry/backoff and explicit recovery actions for quota errors,
+   corrupt records, authentication expiry, and repeated connection failure.
+6. Connect the state machine to the editor UI with a pending-update count and
+   non-destructive retry or reset-local-cache path.
+7. Add adapter, client, and editor tests, then run all repository quality gates.

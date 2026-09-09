@@ -76,8 +76,12 @@ export function encodeYjsState(ydoc: Y.Doc): Uint8Array {
 // Applying updates is intentionally separate from command execution: in M5 a
 // transport can carry these bytes, while this milestone tests the sync core in
 // one process without introducing a networking abstraction prematurely.
-export function applyYjsUpdate(ydoc: Y.Doc, update: Uint8Array): void {
-  Y.applyUpdate(ydoc, update);
+export function applyYjsUpdate(
+  ydoc: Y.Doc,
+  update: Uint8Array,
+  origin?: unknown,
+): void {
+  Y.applyUpdate(ydoc, update, origin);
 }
 
 // Snapshot replacement supports the existing local undo controls while the
