@@ -15,6 +15,11 @@ frequent presence and synchronization updates.
   of repeatedly scanning the full shape array.
 - A 1,000-shape Yjs round-trip test protects large-document correctness.
 
+Run `npm run profile:performance` for the repeatable document-operation
+baseline. In the local baseline, 10,000 shapes took approximately 49 ms to
+create, 33 ms to encode, and 23 ms to convert back to the typed model; costs
+grew roughly linearly across the 1,000, 5,000, and 10,000 shape samples.
+
 ## Next profiling work
 
 Measure a representative 1,000-shape document in the browser while adding,

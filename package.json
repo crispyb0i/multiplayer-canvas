@@ -8,6 +8,7 @@
     "start": "next start",
     "collab:start": "tsx server/index.ts",
     "db:migrate": "tsx scripts/migrate.ts",
+    "profile:performance": "tsx scripts/profile-performance.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
