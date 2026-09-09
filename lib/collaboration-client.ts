@@ -5,7 +5,7 @@ import {
   createIndexedDbPersistence,
   type OfflinePersistence,
 } from "./offline-persistence";
-import { applyYjsUpdate, encodeYjsState } from "./yjs-document";
+import { applyYjsUpdate, encodeYjsState, REMOTE_ORIGIN } from "./yjs-document";
 
 export type CollaborationStatus =
   "connecting" | "syncing" | "connected" | "disconnected" | "error";
@@ -86,7 +86,7 @@ export class CollaborationClient {
       const state = await this.persistence.load();
       if (!state) return;
       // Restored bytes are already local history; do not enqueue them again.
-      applyYjsUpdate(this.options.document, state.document, this);
+      applyYjsUpdate(this.options.document, state.document, REMOTE_ORIGIN);
       this.options.onPendingChange?.(state.pending.length);
     } catch {
       this.options.onStatusChange?.("error");
@@ -134,7 +134,7 @@ export class CollaborationClient {
       event.data instanceof ArrayBuffer
         ? new Uint8Array(event.data)
         : new Uint8Array(event.data as unknown as ArrayBuffer);
-    applyYjsUpdate(this.options.document, update, this);
+    applyYjsUpdate(this.options.document, update, REMOTE_ORIGIN);
     this.options.onRemoteUpdate?.();
   };
 
@@ -175,7 +175,7 @@ export class CollaborationClient {
     // IndexedDB transactions are serialized here so rapid pointer moves cannot
     // read the same old queue and overwrite one another's pending updates.
     this.persistenceWork = this.persistenceWork.then(() =>
-      this.persistLocalUpdate(update, origin === this),
+      this.persistLocalUpdate(update, origin === REMOTE_ORIGIN),
     );
   };
 

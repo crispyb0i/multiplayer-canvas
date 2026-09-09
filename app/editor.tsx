@@ -27,6 +27,7 @@ import {
   replaceYjsDocument,
   yDocumentToDocument,
 } from "../lib/yjs-document";
+import { createCollaborativeHistory } from "../lib/collaborative-history";
 
 const CANVAS_WIDTH = 900;
 const CANVAS_HEIGHT = 560;
@@ -52,6 +53,9 @@ export default function Editor({
   collaborationAuth,
 }: { collaborationAuth?: CollaborationAuth } = {}) {
   const ydocRef = useRef(createYDocument());
+  const collaborativeHistory = useRef(
+    createCollaborativeHistory(ydocRef.current),
+  );
   const [history, setHistory] = useState<HistoryState>(() => createHistory());
   const [document, setDocument] = useState<DocumentModel>(() =>
     yDocumentToDocument(ydocRef.current),
@@ -59,6 +63,7 @@ export default function Editor({
   const [collaborationStatus, setCollaborationStatus] =
     useState<CollaborationStatus>("disconnected");
   const [pendingUpdates, setPendingUpdates] = useState(0);
+  const [, setCollaborativeHistoryVersion] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [remotePresence, setRemotePresence] = useState<Presence[]>([]);
   const collaborationClient = useRef<CollaborationClient | null>(null);
@@ -83,6 +88,9 @@ export default function Editor({
   } | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const selected = document.shapes.find((shape) => shape.id === selectedId);
+  const collaborativeMode = Boolean(
+    process.env.NEXT_PUBLIC_COLLAB_URL && collaborationAuth,
+  );
 
   // The URL is injected only in deployed environments. Local development and
   // tests remain useful without a backend by falling back to single-user mode.
@@ -103,10 +111,14 @@ export default function Editor({
       onRemoteUpdate: () => {
         const syncedDocument = yDocumentToDocument(ydocRef.current);
         setDocument(syncedDocument);
-        // A remote edit invalidates local snapshot history because its past
-        // entries were based on an older document. M10 will define how local
-        // undo can safely cross collaborative update boundaries.
-        setHistory(createHistory(syncedDocument));
+        if (collaborativeMode) {
+          collaborativeHistory.current.remoteUpdateBoundary();
+          setCollaborativeHistoryVersion((version) => version + 1);
+        } else {
+          // Snapshot history cannot safely cross a remote update. The
+          // collaborative path uses Yjs UndoManager instead.
+          setHistory(createHistory(syncedDocument));
+        }
       },
     });
     collaborationClient.current = client;
@@ -115,7 +127,7 @@ export default function Editor({
       client.dispose();
       collaborationClient.current = null;
     };
-  }, [collaborationAuth]);
+  }, [collaborationAuth, collaborativeMode]);
 
   // Selection is local UI state, but publishing it lets peers render an
   // awareness outline without polluting the shared document or undo stack.
@@ -141,6 +153,12 @@ export default function Editor({
   }
 
   function undoDocument() {
+    if (collaborativeMode) {
+      collaborativeHistory.current.undo();
+      setDocument(yDocumentToDocument(ydocRef.current));
+      setCollaborativeHistoryVersion((version) => version + 1);
+      return;
+    }
     const next = undo(history);
     if (next === history) return;
     replaceYjsDocument(ydocRef.current, next.document);
@@ -149,6 +167,12 @@ export default function Editor({
   }
 
   function redoDocument() {
+    if (collaborativeMode) {
+      collaborativeHistory.current.redo();
+      setDocument(yDocumentToDocument(ydocRef.current));
+      setCollaborativeHistoryVersion((version) => version + 1);
+      return;
+    }
     const next = redo(history);
     if (next === history) return;
     replaceYjsDocument(ydocRef.current, next.document);
@@ -346,7 +370,11 @@ export default function Editor({
         <button
           aria-label="Undo"
           className="cursor-pointer rounded-lg border border-[#52617d] bg-panel px-3.5 py-2.5 font-bold text-ink disabled:cursor-not-allowed disabled:opacity-40"
-          disabled={!canUndo(history)}
+          disabled={
+            collaborativeMode
+              ? !collaborativeHistory.current.canUndo()
+              : !canUndo(history)
+          }
           onClick={undoDocument}
         >
           Undo
@@ -354,7 +382,11 @@ export default function Editor({
         <button
           aria-label="Redo"
           className="cursor-pointer rounded-lg border border-[#52617d] bg-panel px-3.5 py-2.5 font-bold text-ink disabled:cursor-not-allowed disabled:opacity-40"
-          disabled={!canRedo(history)}
+          disabled={
+            collaborativeMode
+              ? !collaborativeHistory.current.canRedo()
+              : !canRedo(history)
+          }
           onClick={redoDocument}
         >
           Redo

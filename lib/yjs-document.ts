@@ -10,6 +10,8 @@ import {
 const ROOT_KEY = "document";
 const VERSION_KEY = "version";
 const SHAPES_KEY = "shapes";
+export const LOCAL_ORIGIN = Symbol("local-command");
+export const REMOTE_ORIGIN = Symbol("remote-update");
 
 type YShape = Y.Map<unknown>;
 
@@ -47,6 +49,7 @@ export function yDocumentToDocument(ydoc: Y.Doc): DocumentModel {
 export function executeYjsCommand(
   ydoc: Y.Doc,
   command: Command,
+  origin: unknown = LOCAL_ORIGIN,
 ): DocumentModel {
   const before = yDocumentToDocument(ydoc);
   applyCommand(before, command);
@@ -64,7 +67,7 @@ export function executeYjsCommand(
         shape.set(key, value);
       }
     }
-  });
+  }, origin);
 
   return yDocumentToDocument(ydoc);
 }
