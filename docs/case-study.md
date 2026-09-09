@@ -18,7 +18,7 @@ benchmark.
 
 ## Results
 
-Live demo: https://multiplayer-canvas-production.up.railway.app
+Live demo: https://multiplayer-canvas-orpin.vercel.app
 
 - 1,000 seeded rectangles restore as a real persisted Yjs snapshot.
 - Two authenticated clients connect to the same organization room.
