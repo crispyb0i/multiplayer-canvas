@@ -112,6 +112,7 @@ export default function Editor({
   const [pendingUpdates, setPendingUpdates] = useState(0);
   const [, setCollaborativeHistoryVersion] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState("");
   const [remotePresence, setRemotePresence] = useState<Presence[]>([]);
   const collaborationClient = useRef<CollaborationClient | null>(null);
   const [viewport, setViewport] = useState({ x: 0, y: 0, scale: 1 });
@@ -299,6 +300,7 @@ export default function Editor({
     const position = point(event);
     collaborationClient.current?.sendPresence({ cursor: position, selectedId });
     setSelectedId(shape.id);
+    setAnnouncement(`${shape.type} selected`);
     drag.current = {
       id: shape.id,
       startX: position.x,
@@ -307,6 +309,16 @@ export default function Editor({
       latestShape: shape,
     };
   }
+  // SVG groups are not keyboard controls by default. Giving each shape an
+  // explicit activation path keeps selection usable without pointer input.
+  function onShapeKeyDown(event: KeyboardEvent<SVGGElement>, shape: Shape) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectedId(shape.id);
+    setAnnouncement(`${shape.type} selected`);
+  }
+
   function onPointerMove(event: PointerEvent<SVGSVGElement>) {
     if (pan.current) {
       setViewport((current) => ({
@@ -344,7 +356,14 @@ export default function Editor({
     setDocument(nextDocument);
   }
   function stopPointer() {
-    if (drag.current && drag.current.latestShape !== drag.current.shape) {
+    // Collaborative drags already commit each pointer move to Yjs. Keeping
+    // a second snapshot-history commit here would apply against the local
+    // history baseline, which may not contain a server-restored shape.
+    if (
+      !collaborativeMode &&
+      drag.current &&
+      drag.current.latestShape !== drag.current.shape
+    ) {
       const { id, latestShape } = drag.current;
       setHistory((current) =>
         executeCommand(current, {
@@ -450,6 +469,9 @@ export default function Editor({
             ? `Collaboration: ${collaborationStatus}${pendingUpdates ? ` (${pendingUpdates} pending)` : ""}`
             : "Collaboration: local mode"}
         </span>
+        <span className="sr-only" aria-live="assertive" aria-atomic="true">
+          {announcement}
+        </span>
         {collaborationStatus === "error" && (
           <button
             className="cursor-pointer rounded-md border border-[#b86b6b] bg-panel px-2.5 py-2 text-sm text-ink"
@@ -499,10 +521,20 @@ export default function Editor({
         <g
           transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.scale})`}
         >
+          {document.shapes.length === 0 && (
+            <text x="450" y="280" textAnchor="middle" fill="#aab5cc">
+              Canvas is empty. Use Add rectangle or Add text to begin.
+            </text>
+          )}
           {document.shapes.map((shape) => (
             <g
               key={shape.id}
+              role="button"
+              tabIndex={0}
+              aria-label={`${shape.type} shape`}
+              aria-pressed={selectedId === shape.id}
               onPointerDown={(event) => onShapePointerDown(event, shape)}
+              onKeyDown={(event) => onShapeKeyDown(event, shape)}
             >
               <ShapeVisual shape={shape} selected={selectedId === shape.id} />
             </g>

@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { WebSocketServer, type RawData } from "ws";
+import { loadEnvConfig } from "@next/env";
 import { verifyToken } from "@clerk/backend";
 import { CollaborationRooms } from "../lib/collaboration";
 import {
@@ -7,6 +8,11 @@ import {
   saveSnapshot,
   upsertWorkspace,
 } from "../lib/persistence";
+
+// The standalone WebSocket process does not pass through Next's runtime, so it
+// must load the same local environment file before reading Clerk and database
+// configuration.
+loadEnvConfig(process.cwd());
 
 const port = Number(process.env.PORT ?? 8080);
 const rooms = new CollaborationRooms({
@@ -16,7 +22,13 @@ const rooms = new CollaborationRooms({
 const httpServer = createServer((request, response) => {
   if (request.url === "/health") {
     response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ status: "ok" }));
+    response.end(
+      JSON.stringify({
+        status: "ok",
+        service: "multiplayer-canvas-collaboration",
+        uptimeSeconds: Math.floor(process.uptime()),
+      }),
+    );
     return;
   }
   response.writeHead(404);
@@ -27,6 +39,21 @@ const websocketServer = new WebSocketServer({ server: httpServer });
 // Railway needs one long-lived process for WebSockets; the HTTP health route
 // gives its deploy platform a cheap readiness check without involving rooms.
 websocketServer.on("connection", async (socket, request) => {
+  const pendingMessages: Array<string | Uint8Array> = [];
+  let authenticated = false;
+
+  // The browser sends `join` immediately after its socket opens. Buffering
+  // messages while Clerk verification is in flight avoids losing that first
+  // packet because authentication is asynchronous.
+  socket.on("message", (data, isBinary) => {
+    const message = isBinary ? rawDataToUpdate(data) : data.toString();
+    if (!authenticated) {
+      pendingMessages.push(message);
+      return;
+    }
+    rooms.receive(socket, message);
+  });
+
   const identity = await authenticateRequest(request.url);
   if (!identity) {
     socket.close(1008, "Authentication required");
@@ -34,9 +61,8 @@ websocketServer.on("connection", async (socket, request) => {
   }
   rooms.connect(socket);
   rooms.authenticate(socket, identity);
-  socket.on("message", (data, isBinary) => {
-    rooms.receive(socket, isBinary ? rawDataToUpdate(data) : data.toString());
-  });
+  authenticated = true;
+  for (const message of pendingMessages) rooms.receive(socket, message);
   socket.on("close", () => rooms.disconnect(socket));
 });
 
@@ -45,25 +71,52 @@ async function authenticateRequest(requestUrl: string | undefined): Promise<{
   organizationId: string;
   organizationRole: string;
 } | null> {
-  if (!process.env.CLERK_SECRET_KEY || !requestUrl) return null;
+  if (!process.env.CLERK_SECRET_KEY || !requestUrl) {
+    return null;
+  }
   const token = new URL(requestUrl, "http://localhost").searchParams.get(
     "token",
   );
-  if (!token) return null;
+  if (!token) {
+    return null;
+  }
   try {
     const claims = await verifyToken(token, {
       secretKey: process.env.CLERK_SECRET_KEY,
     });
+    const organizationClaims =
+      typeof claims.o === "object" && claims.o !== null
+        ? (claims.o as Record<string, unknown>)
+        : null;
+    const organizationId =
+      typeof claims.org_id === "string"
+        ? claims.org_id
+        : typeof organizationClaims?.id === "string"
+          ? organizationClaims.id
+          : null;
+    const organizationRole =
+      typeof claims.org_role === "string"
+        ? claims.org_role
+        : typeof organizationClaims?.rol === "string"
+          ? organizationClaims.rol
+          : null;
+    const normalizedOrganizationRole =
+      organizationRole === "admin"
+        ? "org:admin"
+        : organizationRole === "member"
+          ? "org:member"
+          : organizationRole;
     if (
       typeof claims.sub !== "string" ||
-      typeof claims.org_id !== "string" ||
-      typeof claims.org_role !== "string"
-    )
+      !organizationId ||
+      !normalizedOrganizationRole
+    ) {
       return null;
+    }
     return {
       userId: claims.sub,
-      organizationId: claims.org_id,
-      organizationRole: claims.org_role,
+      organizationId,
+      organizationRole: normalizedOrganizationRole,
     };
   } catch {
     return null;

@@ -28,12 +28,14 @@ export default function Home() {
           </SignedIn>
           <SignedOut>
             <div className="ml-auto flex items-center gap-3">
-              <SignInButton mode="modal">
+              {/* Modal auth needs an explicit local destination; otherwise Clerk
+                  falls back to its hosted accounts.dev redirect page. */}
+              <SignInButton mode="modal" fallbackRedirectUrl="/">
                 <button className="rounded-md px-4 py-2 text-sm text-muted hover:text-ink">
                   Sign in
                 </button>
               </SignInButton>
-              <SignUpButton mode="modal">
+              <SignUpButton mode="modal" fallbackRedirectUrl="/">
                 <button className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-bg hover:opacity-90">
                   Sign up
                 </button>

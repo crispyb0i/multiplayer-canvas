@@ -16,3 +16,5 @@ Read them in order:
 10. [M9 — Offline and reconnect sync](m9-offline-reconnect-sync.md)
 11. [M10 — Collaborative history](m10-collaborative-history.md)
 12. [M11 — Performance](m11-performance.md)
+13. [M12 — Accessibility product polish](m12-accessibility-product-polish.md)
+14. [M13 — Portfolio packaging](m13-portfolio-packaging.md)
