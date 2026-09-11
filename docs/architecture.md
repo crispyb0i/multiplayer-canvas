@@ -31,3 +31,12 @@ Important boundaries:
   exposing configuration or credentials.
 
 See the ADRs and milestone lessons for the decisions behind these boundaries.
+
+## Prototype constraints
+
+The current service acknowledges updates before its debounced database write.
+An acknowledgement is transport acceptance, not a durability guarantee. The
+server checks Yjs encoding but does not enforce the drawing schema on remote
+updates, and verifies session authorization only at connection time. Deploy a
+single collaboration process until shared room coordination is implemented.
+See the [readiness audit](portfolio-audit.md) for failure cases and next steps.

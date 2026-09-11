@@ -1,13 +1,27 @@
 "use client";
 
 import { OrganizationSwitcher, useAuth, useOrganization } from "@clerk/nextjs";
+import { useMemo } from "react";
 import Editor from "./editor";
 
 export default function AuthenticatedEditor() {
-  const { getToken, isLoaded, isSignedIn } = useAuth();
+  const { getToken, isLoaded, isSignedIn, userId } = useAuth();
   const { organization } = useOrganization();
 
-  if (!isLoaded) return null;
+  // Stable credentials avoid reconnecting for unrelated Clerk renders. The key
+  // below discards the replica on account/workspace changes to prevent leakage.
+  const collaborationAuth = useMemo(
+    () =>
+      organization
+        ? {
+            organizationId: organization.id,
+            tokenProvider: () => getToken(),
+          }
+        : undefined,
+    [organization, getToken],
+  );
+
+  if (!isLoaded) return <p role="status">Loading workspace…</p>;
   if (!isSignedIn) return <Editor />;
   if (!organization) {
     return (
@@ -28,10 +42,8 @@ export default function AuthenticatedEditor() {
   }
   return (
     <Editor
-      collaborationAuth={{
-        organizationId: organization.id,
-        tokenProvider: () => getToken(),
-      }}
+      key={`${userId}:${organization.id}`}
+      collaborationAuth={collaborationAuth}
     />
   );
 }

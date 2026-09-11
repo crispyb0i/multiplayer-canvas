@@ -37,4 +37,12 @@ describe("workspace authorization", () => {
       ),
     ).toBe(false);
   });
+  it.each(["__proto__", "constructor", "toString"])(
+    "rejects inherited object keys as roles: %s",
+    (organizationRole) => {
+      expect(
+        canAccessWorkspace({ ...member, organizationRole }, "org_1", "edit"),
+      ).toBe(false);
+    },
+  );
 });

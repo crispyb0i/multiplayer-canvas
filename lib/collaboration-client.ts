@@ -37,6 +37,7 @@ export class CollaborationClient {
   private connecting = false;
   private syncReady = false;
   private draining = false;
+  private drainRequested = false;
   private persistenceWork = Promise.resolve();
   private acknowledgement: ((accepted: boolean) => void) | null = null;
   private reconnectDelay = 1000;
@@ -48,11 +49,20 @@ export class CollaborationClient {
       options.persistence ??
       createIndexedDbPersistence(options.organizationId, options.roomId);
     this.ready = this.restoreLocalState();
+    this.persistenceWork = this.ready;
     options.document.on("update", this.onLocalUpdate);
   }
 
   connect(): void {
-    if (this.disposed || this.socket || this.connecting) return;
+    if (this.disposed || this.connecting) return;
+    if (this.socket) {
+      if (this.syncReady) void this.drainQueue();
+      return;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.connecting = true;
     void this.ready.then(() => this.connectWithToken());
   }
@@ -61,6 +71,7 @@ export class CollaborationClient {
     this.disposed = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.options.document.off("update", this.onLocalUpdate);
+    this.acknowledgement?.(false);
     this.socket?.close();
     this.socket = null;
   }
@@ -84,7 +95,7 @@ export class CollaborationClient {
   private async restoreLocalState(): Promise<void> {
     try {
       const state = await this.persistence.load();
-      if (!state) return;
+      if (!state || this.disposed) return;
       // Restored bytes are already local history; do not enqueue them again.
       applyYjsUpdate(this.options.document, state.document, REMOTE_ORIGIN);
       this.options.onPendingChange?.(state.pending.length);
@@ -94,16 +105,29 @@ export class CollaborationClient {
   }
 
   private async connectWithToken(): Promise<void> {
-    const token = await this.options.tokenProvider();
+    let token: string | null;
+    try {
+      token = await this.options.tokenProvider();
+    } catch {
+      this.connecting = false;
+      if (!this.disposed) this.options.onStatusChange?.("error");
+      return;
+    }
     this.connecting = false;
     if (this.disposed || !token) {
-      this.options.onStatusChange?.("disconnected");
+      this.options.onStatusChange?.("error");
       return;
     }
     this.options.onStatusChange?.("connecting");
-    const url = new URL(this.options.url);
-    url.searchParams.set("token", token);
-    const socket = new WebSocket(url);
+    let socket: WebSocket;
+    try {
+      const url = new URL(this.options.url);
+      url.searchParams.set("token", token);
+      socket = new WebSocket(url);
+    } catch {
+      this.options.onStatusChange?.("error");
+      return;
+    }
     socket.binaryType = "arraybuffer";
     socket.addEventListener("open", this.onOpen);
     socket.addEventListener("message", this.onMessage);
@@ -113,7 +137,6 @@ export class CollaborationClient {
   }
 
   private readonly onOpen = (): void => {
-    this.reconnectDelay = 1000;
     this.syncReady = false;
     this.options.onStatusChange?.("syncing");
     this.socket?.send(
@@ -126,6 +149,7 @@ export class CollaborationClient {
   };
 
   private readonly onMessage = (event: MessageEvent<ArrayBuffer>): void => {
+    if (this.disposed) return;
     if (typeof event.data === "string") {
       this.onControlMessage(event.data);
       return;
@@ -134,8 +158,13 @@ export class CollaborationClient {
       event.data instanceof ArrayBuffer
         ? new Uint8Array(event.data)
         : new Uint8Array(event.data as unknown as ArrayBuffer);
-    applyYjsUpdate(this.options.document, update, REMOTE_ORIGIN);
-    this.options.onRemoteUpdate?.();
+    try {
+      applyYjsUpdate(this.options.document, update, REMOTE_ORIGIN);
+      this.options.onRemoteUpdate?.();
+    } catch {
+      this.options.onStatusChange?.("error");
+      this.socket?.close();
+    }
   };
 
   private readonly onControlMessage = (serialized: string): void => {
@@ -147,6 +176,11 @@ export class CollaborationClient {
     }
     if (!message || typeof message !== "object") return;
     const record = message as Record<string, unknown>;
+    if (record.type === "sync-error") {
+      this.options.onStatusChange?.("error");
+      this.socket?.close();
+      return;
+    }
     if (record.type === "sync-ready") {
       this.syncReady = true;
       void this.drainQueue();
@@ -197,6 +231,9 @@ export class CollaborationClient {
   }
 
   private async drainQueue(): Promise<void> {
+    // A producer can enqueue while an acknowledgement is in flight. Remember
+    // that wakeup and reload after every ack instead of draining one snapshot.
+    this.drainRequested = true;
     if (
       this.draining ||
       !this.syncReady ||
@@ -205,35 +242,59 @@ export class CollaborationClient {
       return;
     this.draining = true;
     try {
-      const state = await this.persistence.load();
-      for (const entry of state?.pending ?? []) {
-        if (!this.syncReady || this.socket?.readyState !== WebSocket.OPEN)
+      while (
+        !this.disposed &&
+        this.syncReady &&
+        this.socket?.readyState === WebSocket.OPEN
+      ) {
+        this.drainRequested = false;
+        const state = await this.persistence.load();
+        const entry = state?.pending[0];
+        this.options.onPendingChange?.(state?.pending.length ?? 0);
+        if (!entry) {
+          this.reconnectDelay = 1000;
+          this.options.onStatusChange?.("connected");
           break;
-        this.socket.send(entry.update);
+        }
+        const socket = this.socket;
+        if (!this.syncReady || socket.readyState !== WebSocket.OPEN) break;
         const accepted = await new Promise<boolean>((resolve) => {
+          // Lost acknowledgements must retain the durable queue and reconnect,
+          // rather than leave the editor stuck in syncing forever.
+          const timeout = setTimeout(() => {
+            this.acknowledgement?.(false);
+            socket.close();
+          }, 10000);
           this.acknowledgement = (wasAccepted) => {
+            clearTimeout(timeout);
             this.acknowledgement = null;
             resolve(wasAccepted);
           };
+          try {
+            socket.send(entry.update);
+          } catch {
+            this.acknowledgement(false);
+            socket.close();
+          }
         });
-        if (!accepted || this.socket?.readyState !== WebSocket.OPEN) break;
+        if (!accepted) break;
         await this.persistence.acknowledge(entry.id);
       }
-      const remaining = await this.persistence.load();
-      this.options.onPendingChange?.(remaining?.pending.length ?? 0);
-      if (!remaining?.pending.length)
-        this.options.onStatusChange?.("connected");
     } catch {
+      this.drainRequested = false;
       this.options.onStatusChange?.("error");
     } finally {
       this.draining = false;
+      if (this.drainRequested && !this.disposed && this.syncReady)
+        void this.drainQueue();
     }
   }
 
   private readonly onClose = (): void => {
     this.socket = null;
     this.syncReady = false;
-    this.draining = false;
+    this.presences.clear();
+    if (!this.disposed) this.options.onPresenceChange?.([]);
     this.acknowledgement?.(false);
     this.acknowledgement = null;
     if (this.disposed) return;

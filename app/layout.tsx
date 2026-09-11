@@ -4,7 +4,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Multiplayer Canvas",
-  description: "A learning-first collaborative diagramming workspace.",
+  description:
+    "A real-time collaborative canvas with live presence, offline sync, and keyboard editing.",
 };
 
 export default function RootLayout({

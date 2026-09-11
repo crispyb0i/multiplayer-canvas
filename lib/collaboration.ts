@@ -41,6 +41,7 @@ type RoomPersistence = {
 // The room hub owns room semantics while persistence is injected, letting
 // tests exercise collaboration without opening ports or contacting Neon.
 export class CollaborationRooms {
+  private readonly joinRequests = new WeakMap<CollaborationClient, object>();
   private readonly rooms = new Map<string, Room>();
   private readonly clientRooms = new Map<CollaborationClient, string>();
   private readonly identities = new Map<
@@ -93,16 +94,15 @@ export class CollaborationRooms {
     } catch {
       return;
     }
-    const update = Y.encodeStateAsUpdate(room.document);
     room.version += 1;
     client.send(JSON.stringify({ type: "sync-ack" }));
-    for (const peer of room.clients) if (peer !== client) peer.send(update);
+    for (const peer of room.clients) if (peer !== client) peer.send(data);
     const organizationId = room.organizationId;
     if (this.options.persistence && organizationId) {
       const snapshot: SnapshotRecord = {
         organizationId,
         documentId: room.documentId,
-        snapshot: update,
+        snapshot: Y.encodeStateAsUpdate(room.document),
         version: room.version,
       };
       this.scheduleSnapshot(roomId, snapshot);
@@ -110,10 +110,17 @@ export class CollaborationRooms {
   }
 
   disconnect(client: CollaborationClient): void {
+    this.joinRequests.delete(client);
+    this.identities.delete(client);
+    this.leaveRoom(client);
+  }
+
+  // Leaving a room preserves verified identity; disconnecting revokes it even
+  // if an asynchronous initial join has not finished yet.
+  private leaveRoom(client: CollaborationClient): void {
     const roomId = this.clientRooms.get(client);
     if (!roomId) return;
     this.clientRooms.delete(client);
-    this.identities.delete(client);
     const room = this.rooms.get(roomId);
     if (!room) return;
     room.clients.delete(client);
@@ -151,8 +158,8 @@ export class CollaborationRooms {
     const write = previous
       .catch(() => undefined)
       .then(() => this.options.persistence!.saveSnapshot(snapshot))
-      .catch((error) => {
-        console.error("Failed to persist collaboration snapshot", error);
+      .catch(() => {
+        console.error("Failed to persist collaboration snapshot");
       });
     this.snapshotWrites.set(roomId, write);
   }
@@ -202,12 +209,15 @@ export class CollaborationRooms {
     roomId: string,
     organizationId?: string,
   ): void {
-    this.disconnect(client);
+    this.leaveRoom(client);
+    const request = {};
+    this.joinRequests.set(client, request);
     if (this.options.persistence && organizationId) {
-      void this.joinPersisted(client, roomId, organizationId);
+      void this.joinPersisted(client, roomId, organizationId, request);
       return;
     }
-    let room = this.rooms.get(roomId);
+    const roomKey = organizationId ? `${organizationId}:${roomId}` : roomId;
+    let room = this.rooms.get(roomKey);
     if (!room) {
       room = {
         document: new Y.Doc(),
@@ -216,10 +226,10 @@ export class CollaborationRooms {
         presence: new Map(),
         version: 0,
       };
-      this.rooms.set(roomId, room);
+      this.rooms.set(roomKey, room);
     }
     room.clients.add(client);
-    this.clientRooms.set(client, roomId);
+    this.clientRooms.set(client, roomKey);
     client.send(Y.encodeStateAsUpdate(room.document));
     client.send(JSON.stringify({ type: "sync-ready" }));
     for (const presence of room.presence.values())
@@ -230,6 +240,7 @@ export class CollaborationRooms {
     client: CollaborationClient,
     roomId: string,
     organizationId: string,
+    request: object,
   ): Promise<void> {
     const roomKey = `${organizationId}:${roomId}`;
     const pending = this.loadingRooms.get(roomKey);
@@ -242,8 +253,16 @@ export class CollaborationRooms {
     if (!pending) this.loadingRooms.set(roomKey, roomPromise);
     const room = await roomPromise;
     if (!pending) this.loadingRooms.delete(roomKey);
-    if (!room || this.identities.get(client)?.organizationId !== organizationId)
+    // Ignore obsolete loads after a disconnect or a newer room selection.
+    if (
+      this.joinRequests.get(client) !== request ||
+      this.identities.get(client)?.organizationId !== organizationId
+    )
       return;
+    if (!room) {
+      client.send(JSON.stringify({ type: "sync-error" }));
+      return;
+    }
     room.clients.add(client);
     this.clientRooms.set(client, roomKey);
     client.send(Y.encodeStateAsUpdate(room.document));
@@ -278,8 +297,8 @@ export class CollaborationRooms {
       };
       this.rooms.set(`${organizationId}:${roomId}`, room);
       return room;
-    } catch (error) {
-      console.error("Failed to restore collaboration room", error);
+    } catch {
+      console.error("Failed to restore collaboration room");
       return null;
     }
   }

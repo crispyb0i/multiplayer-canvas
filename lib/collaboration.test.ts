@@ -214,4 +214,125 @@ describe("collaboration room transport", () => {
       }),
     );
   });
+  it("preserves authorization across room changes and isolates organizations without persistence", () => {
+    const rooms = new CollaborationRooms({ requireAuthentication: true });
+    const member = new FakeClient();
+    const other = new FakeClient();
+    for (const [client, organizationId] of [
+      [member, "org-1"],
+      [other, "org-2"],
+    ] as const) {
+      rooms.connect(client);
+      rooms.authenticate(client, {
+        userId: "user",
+        organizationId,
+        organizationRole: "org:member",
+      });
+      rooms.receive(
+        client,
+        JSON.stringify({ type: "join", roomId: "same", organizationId }),
+      );
+    }
+    other.messages.length = 0;
+    rooms.receive(
+      member,
+      encodeYjsState(createYDocument(createDocument([rectangle]))),
+    );
+    expect(other.messages).toEqual([]);
+    rooms.receive(
+      member,
+      JSON.stringify({
+        type: "join",
+        roomId: "another",
+        organizationId: "org-1",
+      }),
+    );
+    member.messages.length = 0;
+    rooms.receive(member, encodeYjsState(createYDocument()));
+    expect(member.messages).toEqual([JSON.stringify({ type: "sync-ack" })]);
+  });
+
+  it("does not resurrect a client disconnected during snapshot loading", async () => {
+    let finish!: (value: null) => void;
+    const persistence = {
+      upsertWorkspace: vi.fn(async () => {}),
+      loadSnapshot: vi.fn(
+        () =>
+          new Promise<null>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+      saveSnapshot: vi.fn(async () => {}),
+    };
+    const rooms = new CollaborationRooms({
+      requireAuthentication: true,
+      persistence,
+    });
+    const client = new FakeClient();
+    rooms.connect(client);
+    rooms.authenticate(client, {
+      userId: "user",
+      organizationId: "org",
+      organizationRole: "org:member",
+    });
+    rooms.receive(
+      client,
+      JSON.stringify({ type: "join", roomId: "one", organizationId: "org" }),
+    );
+    await Promise.resolve();
+    rooms.disconnect(client);
+    finish(null);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(client.messages).toEqual([]);
+  });
+
+  it("relays incremental bytes instead of the full accumulated snapshot", () => {
+    const rooms = new CollaborationRooms();
+    const first = new FakeClient();
+    const peer = new FakeClient();
+    for (const client of [first, peer])
+      rooms.receive(client, JSON.stringify({ type: "join", roomId: "one" }));
+    const document = createYDocument(createDocument([rectangle]));
+    rooms.receive(first, encodeYjsState(document));
+    peer.messages.length = 0;
+    let delta!: Uint8Array;
+    document.on("update", (update: Uint8Array) => {
+      delta = update;
+    });
+    executeYjsCommand(document, {
+      type: "update",
+      id: rectangle.id,
+      changes: { x: 77 },
+    });
+    rooms.receive(first, delta);
+    expect(peer.messages).toEqual([delta]);
+    expect(delta.byteLength).toBeLessThan(encodeYjsState(document).byteLength);
+  });
+
+  it("reports snapshot restoration failures instead of hanging silently", async () => {
+    const logger = vi.spyOn(console, "error").mockImplementation(() => {});
+    const rooms = new CollaborationRooms({
+      requireAuthentication: true,
+      persistence: {
+        upsertWorkspace: async () => {
+          throw new Error("unavailable");
+        },
+        loadSnapshot: async () => null,
+        saveSnapshot: async () => {},
+      },
+    });
+    const client = new FakeClient();
+    rooms.authenticate(client, {
+      userId: "user",
+      organizationId: "org",
+      organizationRole: "org:member",
+    });
+    rooms.receive(
+      client,
+      JSON.stringify({ type: "join", roomId: "one", organizationId: "org" }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(client.messages).toEqual([JSON.stringify({ type: "sync-error" })]);
+    logger.mockRestore();
+  });
 });

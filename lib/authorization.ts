@@ -33,6 +33,12 @@ export function canAccessWorkspace(
   )
     return false;
 
+  if (
+    !identity.organizationRole ||
+    !Object.hasOwn(rolePermissions, identity.organizationRole)
+  )
+    return false;
+
   const permissions =
     rolePermissions[identity.organizationRole as WorkspaceRole];
   return permissions?.includes(permission) ?? false;

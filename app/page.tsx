@@ -10,14 +10,14 @@ import Editor from "./editor";
 import AuthenticatedEditor from "./authenticated-editor";
 
 export default function Home() {
-  // Keeping this component synchronous preserves the simple jsdom test seam;
-  // middleware enforces authentication before production requests reach it.
+  // The public landing page stays usable without an account; authenticated
+  // workspace access is enforced separately by the collaboration service.
   const clerkConfigured = Boolean(
     process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
   );
 
   return (
-    <main className="mx-auto max-w-[980px] px-8 py-[8vh]">
+    <main className="mx-auto max-w-[1100px] px-4 py-8 sm:px-8 sm:py-12">
       {clerkConfigured && (
         <header className="mb-8 flex items-center justify-between">
           <SignedIn>
@@ -45,16 +45,20 @@ export default function Home() {
         </header>
       )}
       <p className="text-[0.8rem] font-bold uppercase tracking-[0.12em] text-accent">
-        M7 · Authenticated workspace
+        Real-time diagramming
       </p>
       <h1 className="my-4 text-[clamp(3rem,8vw,6rem)] tracking-[-0.06em]">
         Multiplayer Canvas
       </h1>
       <p className="max-w-[38rem] text-xl leading-relaxed text-muted">
-        A learning-first foundation for a real-time collaborative technical
-        diagramming app.
+        Sketch an idea. Move it forward together. Try the canvas below, or sign
+        in to collaborate in a shared workspace.
       </p>
       {clerkConfigured ? <AuthenticatedEditor /> : <Editor />}
+      <footer className="mt-8 border-t border-white/10 pt-5 text-sm leading-relaxed text-muted">
+        Built with Next.js, TypeScript, and Yjs. Shared workspaces add live
+        presence and offline sync.
+      </footer>
     </main>
   );
 }

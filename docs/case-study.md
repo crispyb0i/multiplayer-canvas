@@ -16,7 +16,7 @@ work, and Neon stores restart-safe snapshots. The UI keeps SVG rendering
 simple while memoization and indexed shape lookup protect the 1,000-shape
 benchmark.
 
-## Results
+## Demonstrated capabilities
 
 Live demo: https://multiplayer-canvas-orpin.vercel.app
 
@@ -27,6 +27,10 @@ Live demo: https://multiplayer-canvas-orpin.vercel.app
 - Keyboard shape selection, announcements, empty states, and recovery UI are
   part of the editor interaction model.
 - CI runs tests, typecheck, lint, formatting, and production build checks.
+
+The public demo is a prototype. Acknowledgements precede database persistence,
+so crash recovery is not yet a durable-save guarantee. The [readiness audit](portfolio-audit.md)
+separates verified local behavior from remaining production risks.
 
 ## What I would improve next
 

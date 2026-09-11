@@ -4,3 +4,6 @@ out
 coverage
 *.tsbuildinfo
 package-lock.json
+
+# Machine-local agent configuration is not a repository quality gate.
+.claude/settings.local.json

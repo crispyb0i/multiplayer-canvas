@@ -1,8 +1,8 @@
 # Multiplayer Canvas curriculum
 
-Active milestone: M11
+Active milestone: M13 — portfolio audit and demo hardening
 
-This project is built as a sequence of lessons. Each milestone should leave the app runnable, tested, and explainable in an interview. The active milestone is **M11**.
+This project is built as a sequence of lessons. Each milestone should leave the app runnable, tested, and explainable in an interview. The active milestone is **M13**. The portfolio audit explicitly expands scope to hardening existing M1–M12 behavior; it does not certify the earlier performance and production-readiness goals as complete.
 
 ## Milestones
 

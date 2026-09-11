@@ -34,13 +34,21 @@ const httpServer = createServer((request, response) => {
   response.writeHead(404);
   response.end();
 });
-const websocketServer = new WebSocketServer({ server: httpServer });
+const websocketServer = new WebSocketServer({
+  server: httpServer,
+  maxPayload: 2 * 1024 * 1024,
+});
 
 // Railway needs one long-lived process for WebSockets; the HTTP health route
 // gives its deploy platform a cheap readiness check without involving rooms.
 websocketServer.on("connection", async (socket, request) => {
   const pendingMessages: Array<string | Uint8Array> = [];
   let authenticated = false;
+  let pendingBytes = 0;
+  // Register cleanup before awaiting authentication: closed sockets must never
+  // be added to a room by a late verification result.
+  socket.on("close", () => rooms.disconnect(socket));
+  socket.on("error", () => socket.close());
 
   // The browser sends `join` immediately after its socket opens. Buffering
   // messages while Clerk verification is in flight avoids losing that first
@@ -48,6 +56,14 @@ websocketServer.on("connection", async (socket, request) => {
   socket.on("message", (data, isBinary) => {
     const message = isBinary ? rawDataToUpdate(data) : data.toString();
     if (!authenticated) {
+      pendingBytes +=
+        typeof message === "string"
+          ? Buffer.byteLength(message)
+          : message.byteLength;
+      if (pendingMessages.length >= 16 || pendingBytes > 2 * 1024 * 1024) {
+        socket.close(1009, "Authentication buffer exceeded");
+        return;
+      }
       pendingMessages.push(message);
       return;
     }
@@ -55,6 +71,7 @@ websocketServer.on("connection", async (socket, request) => {
   });
 
   const identity = await authenticateRequest(request.url);
+  if (socket.readyState !== socket.OPEN) return;
   if (!identity) {
     socket.close(1008, "Authentication required");
     return;
@@ -63,7 +80,6 @@ websocketServer.on("connection", async (socket, request) => {
   rooms.authenticate(socket, identity);
   authenticated = true;
   for (const message of pendingMessages) rooms.receive(socket, message);
-  socket.on("close", () => rooms.disconnect(socket));
 });
 
 async function authenticateRequest(requestUrl: string | undefined): Promise<{

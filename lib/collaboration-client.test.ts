@@ -154,4 +154,94 @@ describe("CollaborationClient offline sync", () => {
     expect(persistence.state?.pending).toHaveLength(0);
     client.dispose();
   });
+  it("drains edits created while an earlier update awaits acknowledgement", async () => {
+    const persistence = new MemoryPersistence();
+    const document = createYDocument();
+    const client = new CollaborationClient({
+      url: "ws://canvas.test",
+      roomId: "room",
+      organizationId: "org",
+      tokenProvider: async () => "token",
+      document,
+      clientId: "one",
+      color: "red",
+      persistence,
+    });
+    client.connect();
+    await flush();
+    const socket = FakeWebSocket.instances[0];
+    socket.open();
+    executeYjsCommand(document, { type: "add", shape: rectangle });
+    await flush();
+    socket.message(JSON.stringify({ type: "sync-ready" }));
+    await flush();
+    executeYjsCommand(document, {
+      type: "update",
+      id: rectangle.id,
+      changes: { x: 99 },
+    });
+    await flush();
+    socket.message(JSON.stringify({ type: "sync-ack" }));
+    await flush();
+    expect(
+      socket.sent.filter((message) => message instanceof Uint8Array),
+    ).toHaveLength(2);
+    socket.message(JSON.stringify({ type: "sync-ack" }));
+    await flush();
+    expect(persistence.state?.pending).toHaveLength(0);
+    client.dispose();
+  });
+
+  it("reports token failure and allows a non-destructive retry", async () => {
+    const tokenProvider = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("expired"))
+      .mockResolvedValue("token");
+    const onStatusChange = vi.fn();
+    const client = new CollaborationClient({
+      url: "ws://canvas.test",
+      roomId: "room",
+      organizationId: "org",
+      tokenProvider,
+      document: createYDocument(),
+      clientId: "one",
+      color: "red",
+      persistence: new MemoryPersistence(),
+      onStatusChange,
+    });
+    client.connect();
+    await flush();
+    expect(onStatusChange).toHaveBeenLastCalledWith("error");
+    expect(FakeWebSocket.instances).toHaveLength(0);
+    client.connect();
+    await flush();
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    client.dispose();
+  });
+
+  it("retains an unacknowledged update when the connection times out", async () => {
+    vi.useFakeTimers();
+    const persistence = new MemoryPersistence();
+    const document = createYDocument();
+    const client = new CollaborationClient({
+      url: "ws://canvas.test",
+      roomId: "room",
+      organizationId: "org",
+      tokenProvider: async () => "token",
+      document,
+      clientId: "one",
+      color: "red",
+      persistence,
+    });
+    executeYjsCommand(document, { type: "add", shape: rectangle });
+    client.connect();
+    await vi.advanceTimersByTimeAsync(0);
+    const socket = FakeWebSocket.instances[0];
+    socket.open();
+    socket.message(JSON.stringify({ type: "sync-ready" }));
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(socket.readyState).toBe(FakeWebSocket.CLOSED);
+    expect(persistence.state?.pending).toHaveLength(1);
+    client.dispose();
+  });
 });
